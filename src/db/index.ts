@@ -1,15 +1,15 @@
-import { SqliteGarmentRepository, type GarmentRepository } from './repository'
+import { SqliteGarmentRepository, type Repository } from './repository'
 import { IndexedDbStorage } from './storage'
 
-export type { GarmentRepository } from './repository'
+export type { GarmentRepository, OutfitRepository, Repository } from './repository'
 export type { Storage } from './storage'
 export * from './types'
 export * from './labels'
 
-let repoPromise: Promise<GarmentRepository> | null = null
+let repoPromise: Promise<Repository> | null = null
 
 /** Repositorio único de la app (SQLite en memoria + instantánea en IndexedDB). */
-export function getRepository(): Promise<GarmentRepository> {
+export function getRepository(): Promise<Repository> {
   if (!repoPromise) {
     void navigator.storage?.persist?.()
     repoPromise = SqliteGarmentRepository.open(new IndexedDbStorage())

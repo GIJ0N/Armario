@@ -13,8 +13,9 @@ import {
   type Garment,
   type GarmentFilter,
   type GarmentInput,
+  type Outfit,
 } from '../src/db'
-import type { GarmentRepository } from '../src/db'
+import type { Repository } from '../src/db'
 import App from '../src/App'
 
 // jsdom no decodifica imágenes: simulamos el redimensionado.
@@ -22,8 +23,9 @@ vi.mock('../src/lib/image', () => ({
   resizeImage: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }),
 }))
 
-function createFakeRepo(): GarmentRepository & { items: Garment[] } {
+function createFakeRepo(): Repository & { items: Garment[] } {
   const items: Garment[] = []
+  const outfitRows: Outfit[] = []
   let n = 0
   const byFilter = (f: GarmentFilter = {}) =>
     items.filter(
@@ -31,6 +33,14 @@ function createFakeRepo(): GarmentRepository & { items: Garment[] } {
     )
   return {
     items,
+    outfits: {
+      create: async (input) => {
+        const o = { ...input, id: `o${outfitRows.length + 1}`, created_at: new Date().toISOString() }
+        outfitRows.push(o)
+        return o
+      },
+      listRecent: async () => [...outfitRows].reverse(),
+    },
     list: async (f) => byFilter(f),
     get: async (id) => items.find((g) => g.id === id) ?? null,
     create: async (input: GarmentInput) => {

@@ -1,20 +1,31 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../src/App'
+import { RepositoryProvider } from '../src/components/RepositoryContext'
+import { fakeRepo } from './fixtures/fakeRepo'
 
 const LABELS = ['Hoy', 'Armario', 'Agregar', 'Comprar', 'Uso', 'Ajustes']
 
 function renderApp(path = '/') {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <App />
+      <RepositoryProvider repository={fakeRepo([])}>
+        <App />
+      </RepositoryProvider>
     </MemoryRouter>,
   )
 }
 
 describe('shell de la app', () => {
+  // Hoy consulta el clima: sin red en las pruebas.
+  beforeEach(() => {
+    localStorage.clear()
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('sin red')))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
   it('muestra la barra con las 6 pestañas en español', () => {
     renderApp()
     const nav = screen.getByRole('navigation', { name: 'Navegación principal' })

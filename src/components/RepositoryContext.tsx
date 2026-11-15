@@ -1,17 +1,17 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { getRepository, type GarmentRepository } from '../db'
+import { getRepository, type Repository } from '../db'
 
-const RepositoryContext = createContext<GarmentRepository | null>(null)
+const RepositoryContext = createContext<Repository | null>(null)
 
 /** Abre la base una vez y la comparte; en pruebas se puede pasar un repositorio ya creado. */
 export function RepositoryProvider({
   repository,
   children,
 }: {
-  repository?: GarmentRepository
+  repository?: Repository
   children: ReactNode
 }) {
-  const [repo, setRepo] = useState<GarmentRepository | null>(repository ?? null)
+  const [repo, setRepo] = useState<Repository | null>(repository ?? null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -27,7 +27,7 @@ export function RepositoryProvider({
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function useRepository(): GarmentRepository {
+export function useRepository(): Repository {
   const repo = useContext(RepositoryContext)
   if (!repo) throw new Error('useRepository fuera de RepositoryProvider')
   return repo
