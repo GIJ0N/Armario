@@ -101,7 +101,12 @@ test('Hoy: sin API key sugiere un outfit por reglas con el clima simulado', asyn
     await expect(page.getByText(name)).toBeVisible()
   }
 
-  await page.goto('./#/')
+  // Antes de usar nada: 0% en Uso y el historial vacío.
+  await page.getByRole('link', { name: /Uso/ }).click()
+  await expect(page.getByTestId('usage-percent')).toHaveText('0%')
+  await expect(page.getByText(/Todavía no has usado ningún outfit/)).toBeVisible()
+
+  await page.getByRole('link', { name: /Hoy/ }).click()
   await expect(page.getByTestId('weather-card')).toContainText('22°')
   await expect(page.getByTestId('weather-card')).toContainText('Lluvia 10%')
   await page.getByRole('button', { name: 'Sugerir outfits' }).click()
@@ -110,5 +115,30 @@ test('Hoy: sin API key sugiere un outfit por reglas con el clima simulado', asyn
   expect(await cards.count()).toBeGreaterThanOrEqual(1)
   await expect(cards.first().getByTestId('source-badge')).toHaveText('reglas')
   await expect(cards.first()).toContainText('Polo e2e')
+
+  // «Me lo pongo» -> aparece en Uso (historial y %), y sobrevive a una recarga.
+  await cards.first().getByRole('button', { name: 'Me lo pongo' }).click()
+  await expect(cards.first().getByText('Puesto hoy ✓')).toBeVisible()
+  await cards.first().getByRole('button', { name: 'Deshacer' }).click()
+  await expect(cards.first().getByRole('button', { name: 'Me lo pongo' })).toBeVisible()
+  await cards.first().getByRole('button', { name: 'Me lo pongo' }).click()
+  await expect(cards.first().getByText('Puesto hoy ✓')).toBeVisible()
+  await page.getByRole('link', { name: /Uso/ }).click()
+  await expect(page.getByTestId('usage-percent')).toHaveText('100%')
+  await expect(page.getByTestId('usage-count')).toHaveText('3 de 3 prendas activas')
+  const entry = page.getByTestId('history-entry')
+  await expect(entry).toHaveCount(1)
+  await expect(entry).toContainText('Casual')
+  await expect(page.getByTestId('history').getByRole('heading', { level: 3 })).toHaveText('Hoy')
+  await expect(page.getByRole('list', { name: 'Más usadas' })).toContainText('Polo e2e')
+  await page.reload()
+  await expect(page.getByTestId('usage-percent')).toHaveText('100%')
+  await expect(page.getByTestId('history-entry')).toHaveCount(1)
+
+  // Con lo ya usado fuera de juego, la única combinación posible no se vuelve a sugerir.
+  await page.getByRole('link', { name: /Hoy/ }).click()
+  await page.getByRole('button', { name: 'Sugerir outfits' }).click()
+  await expect(page.getByText(/No hay más combinaciones nuevas/)).toBeVisible()
+  await expect(page.getByTestId('outfit-card')).toHaveCount(0)
   expect(geminiCalls).toBe(0)
 })

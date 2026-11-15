@@ -17,6 +17,7 @@ import {
 } from '../src/db'
 import type { Repository } from '../src/db'
 import App from '../src/App'
+import { fakeRepo } from './fixtures/fakeRepo'
 
 // jsdom no decodifica imágenes: simulamos el redimensionado.
 vi.mock('../src/lib/image', () => ({
@@ -33,6 +34,7 @@ function createFakeRepo(): Repository & { items: Garment[] } {
     )
   return {
     items,
+    wears: fakeRepo(items).wears,
     outfits: {
       create: async (input) => {
         const o = { ...input, id: `o${outfitRows.length + 1}`, created_at: new Date().toISOString() }

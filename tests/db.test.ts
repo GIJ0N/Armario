@@ -179,3 +179,95 @@ describe('respaldo antes de migrar', () => {
     idb.close()
   })
 })
+
+describe('WearRepository', () => {
+  const weather = null
+  const mkOutfit = (repo: SqliteGarmentRepository, ids: string[], occasion: 'office' | 'gym' = 'office') =>
+    repo.outfits.create({ garment_ids: ids, occasion, weather_snapshot: weather, reasoning: `Razón ${ids.join('+')}`, source: 'rules' })
+  const NOW = new Date(2026, 10, 14, 12, 0, 0) // 14 nov 2026, hora local
+
+  it('registra usos, es idempotente y valida outfit y fecha', async () => {
+    const repo = await open()
+    const o = await mkOutfit(repo, ['a', 'b'])
+    const w1 = await repo.wears.create(o.id, '2026-11-14')
+    const w2 = await repo.wears.create(o.id, '2026-11-14')
+    expect(w2.id).toBe(w1.id)
+    expect(await repo.wears.listHistory()).toHaveLength(1)
+    await expect(repo.wears.create('no-existe', '2026-11-14')).rejects.toThrow(/Outfit no encontrado/)
+    await expect(repo.wears.create(o.id, '14/11/2026')).rejects.toThrow(/Fecha inválida/)
+    repo.close()
+  })
+
+  it('listSince une outfits y filtra por ventana de días; deshacer borra solo ese uso', async () => {
+    const repo = await open()
+    const o1 = await mkOutfit(repo, ['a', 'b', 'c'])
+    const o2 = await mkOutfit(repo, ['d', 'e'], 'gym')
+    await repo.wears.create(o1.id, '2026-11-14')
+    await repo.wears.create(o2.id, '2026-11-10')
+    await repo.wears.create(o1.id, '2026-09-01')
+    const since14 = await repo.wears.listSince(14, NOW)
+    expect(since14.map((w) => [w.outfitId, w.garmentIds, w.date])).toEqual([
+      [o1.id, ['a', 'b', 'c'], '2026-11-14'],
+      [o2.id, ['d', 'e'], '2026-11-10'],
+    ])
+    expect(since14[1]).toMatchObject({ occasion: 'gym', reasoning: 'Razón d+e' })
+    expect((await repo.wears.listSince(3, NOW)).map((w) => w.date)).toEqual(['2026-11-14'])
+    expect((await repo.wears.listSince(80, NOW)).map((w) => w.date)).toEqual(['2026-11-14', '2026-11-10', '2026-09-01'])
+    expect((await repo.wears.listHistory(2)).map((w) => w.date)).toEqual(['2026-11-14', '2026-11-10'])
+
+    await repo.wears.deleteForOutfitOnDate(o1.id, '2026-11-14')
+    expect((await repo.wears.listHistory()).map((w) => w.date)).toEqual(['2026-11-10', '2026-09-01'])
+    await repo.wears.deleteForOutfitOnDate(o1.id, '2026-11-14') // sin efecto
+    expect(await repo.wears.listHistory()).toHaveLength(2)
+    repo.close()
+  })
+
+  it('stats: usos totales, último uso y % del armario activo usado en 30 días', async () => {
+    const repo = await open()
+    const [a, b, c, d, retired] = await Promise.all(
+      ['top', 'bottom', 'shoes', 'accessory', 'top'].map((category, i) =>
+        repo.create({ ...base, category: category as 'top', subcategory: `p${i}`, status: i === 4 ? 'retired' : 'active' }),
+      ),
+    )
+    const o1 = await mkOutfit(repo, [a.id, b.id, c.id])
+    const o2 = await mkOutfit(repo, [a.id, retired.id, 'prenda-borrada'])
+    await repo.wears.create(o1.id, '2026-11-13')
+    await repo.wears.create(o1.id, '2026-11-01')
+    await repo.wears.create(o2.id, '2026-10-20') // 25 días: dentro
+    await repo.wears.create(o2.id, '2026-10-10') // 35 días: fuera de 30
+    const s = await repo.wears.stats(NOW)
+    const stat = (id: string) => s.garments.find((x) => x.garmentId === id)!
+    expect(stat(a.id)).toEqual({ garmentId: a.id, total: 4, lastWorn: '2026-11-13' })
+    expect(stat(b.id)).toEqual({ garmentId: b.id, total: 2, lastWorn: '2026-11-13' })
+    expect(stat(d.id)).toEqual({ garmentId: d.id, total: 0, lastWorn: null })
+    expect(stat(retired.id)).toEqual({ garmentId: retired.id, total: 2, lastWorn: '2026-10-20' })
+    expect(s.garments).toHaveLength(5) // la prenda borrada no aparece
+    // Activas: a, b, c, d (la retirada no cuenta). Usadas en 30 días: a, b, c.
+    expect(s.activeCount).toBe(4)
+    expect(s.usedLast30).toBe(3)
+    expect(s.usedPercent).toBe(75)
+    // Ventana móvil: el 8 de dic el uso del 13 de nov (25 días) sigue dentro; en enero ya nada.
+    const later = await repo.wears.stats(new Date(2026, 11, 8, 12))
+    expect(later.usedLast30).toBe(3)
+    const muchLater = await repo.wears.stats(new Date(2027, 0, 20, 12))
+    expect(muchLater.usedLast30).toBe(0)
+    expect(muchLater.usedPercent).toBe(0)
+    repo.close()
+  })
+
+  it('stats sin prendas activas no divide entre cero', async () => {
+    const repo = await open()
+    expect(await repo.wears.stats(NOW)).toEqual({ garments: [], activeCount: 0, usedLast30: 0, usedPercent: 0 })
+    repo.close()
+  })
+
+  it('los usos sobreviven a cerrar y reabrir', async () => {
+    const repo = await open()
+    const o = await mkOutfit(repo, ['a'])
+    await repo.wears.create(o.id, '2026-11-14')
+    repo.close()
+    const reopened = await open()
+    expect(await reopened.wears.listHistory()).toHaveLength(1)
+    reopened.close()
+  })
+})

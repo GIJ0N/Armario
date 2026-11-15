@@ -4,7 +4,7 @@ import type { AiProvider } from '../ai/provider'
 import { OutfitCard } from '../components/OutfitCard'
 import { useRepository } from '../components/RepositoryContext'
 import { OCCASIONS, OCCASION_LABELS, type Garment, type Occasion } from '../db'
-import { suggestOutfits, type SuggestedOutfit, type Weather } from '../engine'
+import { daysBetween, NO_REPEAT_DAYS, suggestOutfits, type SuggestedOutfit, type Weather } from '../engine'
 import { localDateString } from '../lib/date'
 import { useSettings } from '../settings'
 import {
@@ -18,11 +18,17 @@ import {
 
 type WeatherState = { status: 'loading' } | { status: 'ready'; result: WeatherResult | null }
 
+/** Sugerencia mostrada; `outfitId` es la fila guardada (null si no se pudo guardar). */
+type ShownOutfit = SuggestedOutfit & { outfitId: string | null }
+
 interface Suggestions {
-  outfits: SuggestedOutfit[]
+  outfits: ShownOutfit[]
   garments: Map<string, Garment>
   warnings: string[]
 }
+
+/** Historial de usos que alimenta la rotación (días). */
+const WEARS_LOOKBACK_DAYS = 60
 
 const deg = (n: number) => `${Math.round(n)}°`
 
@@ -42,7 +48,11 @@ export default function HoyPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null)
+  const [worn, setWorn] = useState<Set<string>>(new Set())
+  const [wearBusy, setWearBusy] = useState(false)
   const runId = useRef(0)
+  /** Outfits ya mostrados en esta sesión (solo en memoria): «Otras opciones» no los repite. */
+  const shown = useRef<string[][]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -58,6 +68,7 @@ export default function HoyPage() {
 
   function pickOccasion(o: Occasion) {
     runId.current++
+    shown.current = []
     setOccasion(o)
     setSuggestions(null)
     setError(null)
@@ -70,15 +81,13 @@ export default function HoyPage() {
     setError(null)
     try {
       const garments = await repo.list({ statuses: ['active'] })
-      const saved = await repo.outfits.listRecent(14)
-      const recentOutfits = saved.map((o) => ({
-        garmentIds: o.garment_ids,
-        date: localDateString(new Date(o.created_at)),
-      }))
       const today = localDateString()
-      if (excludeShown && suggestions) {
-        for (const o of suggestions.outfits) recentOutfits.push({ garmentIds: o.garmentIds, date: today })
-      }
+      // Rotación y no repetir usan lo USADO de verdad; lo solo sugerido no cuenta.
+      const wearEntries = await repo.wears.listSince(WEARS_LOOKBACK_DAYS)
+      const wears = wearEntries.map((w) => ({ garmentIds: w.garmentIds, date: w.date }))
+      const recentOutfits = wears.filter((w) => daysBetween(w.date, today) <= NO_REPEAT_DAYS)
+      if (!excludeShown) shown.current = []
+      for (const ids of shown.current) recentOutfits.push({ garmentIds: ids, date: today })
       let provider: AiProvider | undefined
       if (ai.configured) {
         try {
@@ -87,27 +96,51 @@ export default function HoyPage() {
           provider = undefined
         }
       }
-      const res = await suggestOutfits({ occasion, weather, garments, wears: [], recentOutfits, today }, provider)
+      const res = await suggestOutfits({ occasion, weather, garments, wears, recentOutfits, today }, provider)
       const warnings = [...res.warnings]
+      const outfits: ShownOutfit[] = res.outfits.map((o) => ({ ...o, outfitId: null }))
       try {
-        for (const o of res.outfits) {
-          await repo.outfits.create({
+        for (const o of outfits) {
+          const saved = await repo.outfits.create({
             garment_ids: o.garmentIds,
             occasion,
             weather_snapshot: weather,
             reasoning: o.reasoning,
             source: o.source === 'ia' ? 'ai' : 'rules',
           })
+          o.outfitId = saved.id
         }
       } catch {
         warnings.push('No se pudieron guardar las sugerencias en el historial.')
       }
       if (id !== runId.current) return
-      setSuggestions({ outfits: res.outfits, garments: new Map(garments.map((g) => [g.id, g])), warnings })
+      shown.current.push(...outfits.map((o) => o.garmentIds))
+      setSuggestions({ outfits, garments: new Map(garments.map((g) => [g.id, g])), warnings })
     } catch (e) {
       if (id === runId.current) setError(e instanceof Error ? e.message : 'No se pudieron generar los outfits.')
     } finally {
       if (id === runId.current) setBusy(false)
+    }
+  }
+
+  async function toggleWear(o: ShownOutfit, on: boolean) {
+    if (!o.outfitId) return
+    setWearBusy(true)
+    setError(null)
+    try {
+      const today = localDateString()
+      if (on) await repo.wears.create(o.outfitId, today)
+      else await repo.wears.deleteForOutfitOnDate(o.outfitId, today)
+      setWorn((prev) => {
+        const next = new Set(prev)
+        if (on) next.add(o.outfitId!)
+        else next.delete(o.outfitId!)
+        return next
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar el uso.')
+    } finally {
+      setWearBusy(false)
     }
   }
 
@@ -167,6 +200,7 @@ export default function HoyPage() {
                 onClick={() => {
                   setManual(k)
                   setPicking(false)
+                  shown.current = []
                   setSuggestions(null)
                 }}
               >
@@ -187,6 +221,7 @@ export default function HoyPage() {
             className="btn btn-quiet btn-inline"
             onClick={() => {
               setManual(null)
+              shown.current = []
               setSuggestions(null)
             }}
           >
@@ -219,7 +254,15 @@ export default function HoyPage() {
           ))}
           <ul className="outfits">
             {suggestions.outfits.map((o) => (
-              <OutfitCard key={o.garmentIds.join('|')} outfit={o} garments={suggestions.garments} />
+              <OutfitCard
+                key={o.outfitId ?? o.garmentIds.join('|')}
+                outfit={o}
+                garments={suggestions.garments}
+                worn={!!o.outfitId && worn.has(o.outfitId)}
+                busy={wearBusy}
+                onWear={o.outfitId ? () => void toggleWear(o, true) : undefined}
+                onUndo={() => void toggleWear(o, false)}
+              />
             ))}
           </ul>
           {suggestions.outfits.length > 0 && (

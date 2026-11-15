@@ -8,6 +8,7 @@ import App from '../src/App'
 import { RepositoryProvider } from '../src/components/RepositoryContext'
 import type { Repository } from '../src/db'
 import { suggestOutfits } from '../src/engine'
+import { localDateString } from '../src/lib/date'
 import { fakeRepo } from './fixtures/fakeRepo'
 import { MILD, TODAY, wardrobe30 } from './fixtures/wardrobe30'
 
@@ -102,6 +103,50 @@ describe('pantalla Hoy', () => {
     expect(within(cards[0]).getByTestId('source-badge')).toHaveTextContent('IA')
     expect(cards[0]).toHaveTextContent('Razón IA')
     expect(repo.saved.every((o) => o.source === 'ai')).toBe(true)
+  })
+
+  it('"Me lo pongo" registra el uso de hoy, muestra "Puesto hoy ✓" y "Deshacer" lo revierte', async () => {
+    stubNetwork()
+    const repo = fakeRepo()
+    renderHoy(repo)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sugerir outfits' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'Sugerir outfits' }))
+    const cards = await screen.findAllByTestId('outfit-card')
+    expect(within(cards[0]).queryByText('Puesto hoy ✓')).not.toBeInTheDocument()
+    await userEvent.click(within(cards[0]).getByRole('button', { name: 'Me lo pongo' }))
+    expect(await within(cards[0]).findByText('Puesto hoy ✓')).toBeInTheDocument()
+    expect(repo.savedWears).toHaveLength(1)
+    expect(repo.savedWears[0]).toMatchObject({ outfit_id: repo.saved[0].id, date: localDateString() })
+    // Las otras tarjetas siguen ofreciendo "Me lo pongo".
+    expect(within(cards[1]).getByRole('button', { name: 'Me lo pongo' })).toBeInTheDocument()
+    await userEvent.click(within(cards[0]).getByRole('button', { name: 'Deshacer' }))
+    expect(await within(cards[0]).findByRole('button', { name: 'Me lo pongo' })).toBeInTheDocument()
+    expect(repo.savedWears).toHaveLength(0)
+  })
+
+  it('el motor recibe solo lo USADO: lo meramente sugerido no cuenta como reciente', async () => {
+    stubNetwork()
+    const repo = fakeRepo()
+    renderHoy(repo)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sugerir outfits' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'Sugerir outfits' }))
+    const reasons = async () =>
+      (await screen.findAllByTestId('outfit-card')).map((c) => c.querySelector('.outfit-reasoning')!.textContent)
+    const first = await reasons()
+    // Se pidió de nuevo sin "Otras opciones": al no haberse usado nada, salen las mismas sugerencias.
+    await userEvent.click(screen.getByRole('button', { name: 'Sugerir outfits' }))
+    await waitFor(() => expect(repo.saved).toHaveLength(6))
+    expect(await reasons()).toEqual(first)
+    // Una vez usado, ese outfit no vuelve a salir.
+    const used = repo.saved[3]
+    await userEvent.click(within((await screen.findAllByTestId('outfit-card'))[0]).getByRole('button', { name: 'Me lo pongo' }))
+    await waitFor(() => expect(repo.savedWears).toHaveLength(1))
+    await userEvent.click(screen.getByRole('button', { name: 'Sugerir outfits' }))
+    await waitFor(() => expect(repo.saved).toHaveLength(9))
+    const usedKey = [...used.garment_ids].filter((id) => !id.startsWith('acc-')).sort().join()
+    for (const o of repo.saved.slice(6)) {
+      expect(o.garment_ids.filter((id) => !id.startsWith('acc-')).sort().join()).not.toBe(usedKey)
+    }
   })
 
   it('sin red ni caché ofrece climas manuales', async () => {

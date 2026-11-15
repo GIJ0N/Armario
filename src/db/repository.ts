@@ -1,11 +1,14 @@
 import type { Database, Sqlite3Static } from '@sqlite.org/sqlite-wasm'
+import { addDays, localDateString } from '../lib/date'
 import { getSqliteStatic, openSqlite, saveSnapshot } from './sqlite'
 import type { Storage } from './storage'
+import { computeWearStats, type WearStats } from './wearStats'
 import {
   garmentInputSchema,
   type Garment,
   type GarmentFilter,
   type GarmentInput,
+  type Occasion,
   type Outfit,
   type OutfitInput,
 } from './types'
@@ -32,9 +35,42 @@ export interface OutfitRepository {
   listRecent(days: number, now?: Date): Promise<Outfit[]>
 }
 
+export interface Wear {
+  id: string
+  outfit_id: string
+  /** YYYY-MM-DD (fecha local) */
+  date: string
+}
+
+/** Un uso registrado, con los datos del outfit (unión wears + outfits). */
+export interface WearEntry {
+  wearId: string
+  outfitId: string
+  garmentIds: string[]
+  /** YYYY-MM-DD */
+  date: string
+  occasion: Occasion
+  reasoning: string
+}
+
+/** «Me lo pongo»: usos de outfits por fecha (fase 4). */
+export interface WearRepository {
+  /** Registra que el outfit se usó en `date`. Idempotente: no duplica (outfit, fecha). */
+  create(outfitId: string, date: string): Promise<Wear>
+  /** Usos con fecha desde hace `days` días (inclusive) hasta hoy y después, del más reciente al más antiguo. */
+  listSince(days: number, now?: Date): Promise<WearEntry[]>
+  /** Historial completo, del más reciente al más antiguo (máx. `limit`). */
+  listHistory(limit?: number): Promise<WearEntry[]>
+  /** Deshace «Me lo pongo». */
+  deleteForOutfitOnDate(outfitId: string, date: string): Promise<void>
+  /** Usos por prenda y % del armario activo usado en los últimos 30 días. */
+  stats(now?: Date): Promise<WearStats>
+}
+
 /** Todo lo que la UI necesita del almacenamiento. */
 export interface Repository extends GarmentRepository {
   readonly outfits: OutfitRepository
+  readonly wears: WearRepository
 }
 
 type Row = Record<string, unknown>
@@ -71,10 +107,53 @@ function rowToOutfit(row: Row): Outfit {
   }
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function rowToWearEntry(row: Row): WearEntry {
+  return {
+    wearId: row.wid as string,
+    outfitId: row.outfit_id as string,
+    garmentIds: JSON.parse(row.garment_ids as string),
+    date: row.date as string,
+    occasion: row.occasion as Occasion,
+    reasoning: row.reasoning as string,
+  }
+}
+
+const WEAR_SELECT = `SELECT w.id AS wid, w.outfit_id, w.date, o.garment_ids, o.occasion, o.reasoning
+  FROM wears w JOIN outfits o ON o.id = w.outfit_id`
+
 export class SqliteGarmentRepository implements Repository {
   readonly outfits: OutfitRepository = {
     create: (input) => this.createOutfit(input),
     listRecent: (days, now) => this.listRecentOutfits(days, now),
+  }
+
+  readonly wears: WearRepository = {
+    create: (outfitId, date) => this.createWear(outfitId, date),
+    listSince: async (days, now = new Date()) =>
+      this.db
+        .selectObjects(`${WEAR_SELECT} WHERE w.date >= ? ORDER BY w.date DESC, w.rowid DESC`, [
+          addDays(localDateString(now), -days),
+        ])
+        .map(rowToWearEntry),
+    listHistory: async (limit = 200) =>
+      this.db
+        .selectObjects(`${WEAR_SELECT} ORDER BY w.date DESC, w.rowid DESC LIMIT ?`, [limit])
+        .map(rowToWearEntry),
+    deleteForOutfitOnDate: async (outfitId, date) => {
+      await this.write(() => {
+        this.db.exec({ sql: 'DELETE FROM wears WHERE outfit_id = ? AND date = ?', bind: [outfitId, date] })
+      })
+    },
+    stats: async (now = new Date()) => {
+      const garments = this.db.selectObjects('SELECT id, status FROM garments') as {
+        id: string
+        status: Garment['status']
+      }[]
+      const wears = this.db.selectObjects(`${WEAR_SELECT}`).map(rowToWearEntry)
+      return computeWearStats(garments, wears, localDateString(now))
+    },
   }
 
   private queue: Promise<unknown> = Promise.resolve()
@@ -236,6 +315,20 @@ export class SqliteGarmentRepository implements Repository {
     return this.db
       .selectObjects('SELECT * FROM outfits WHERE created_at >= ? ORDER BY created_at DESC, rowid DESC', [since])
       .map(rowToOutfit)
+  }
+
+  private async createWear(outfitId: string, date: string): Promise<Wear> {
+    if (!DATE_RE.test(date)) throw new Error('Fecha inválida (se espera AAAA-MM-DD)')
+    return this.write(() => {
+      if (this.db.selectValue('SELECT 1 FROM outfits WHERE id = ?', [outfitId]) === undefined) {
+        throw new Error('Outfit no encontrado')
+      }
+      const existing = this.db.selectObjects('SELECT id FROM wears WHERE outfit_id = ? AND date = ?', [outfitId, date])
+      if (existing.length) return { id: existing[0].id as string, outfit_id: outfitId, date }
+      const id = crypto.randomUUID()
+      this.db.exec({ sql: 'INSERT INTO wears (id, outfit_id, date) VALUES (?,?,?)', bind: [id, outfitId, date] })
+      return { id, outfit_id: outfitId, date }
+    })
   }
 
   async savePhoto(blob: Blob) {

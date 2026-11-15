@@ -117,3 +117,24 @@ body { min-height: 100dvh; -webkit-tap-highlight-color: transparent; }
 .outfit-thumb { aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: #f3f4f6; }
 .outfit-reasoning { margin: 10px 0 0; font-size: 0.9rem; }
 .outfit-actions:empty { display: none; }
+
+/* Fase 4: usos, historial y pantalla Uso */
+.outfit-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.outfit-actions .btn-block { flex: 1; }
+.worn-note { color: #047857; font-weight: 600; font-size: 0.95rem; }
+.usage-headline { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 2px; }
+.usage-percent { font-size: 2.4rem; line-height: 1.1; }
+.usage-caption { font-size: 1rem; }
+.usage-count { font-size: 0.85rem; }
+.usage-list { list-style: none; margin: 8px 0 16px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.usage-row { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 8px; }
+.usage-thumb { width: 48px; height: 48px; flex: none; border-radius: 8px; overflow: hidden; background: #f3f4f6; }
+.usage-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.usage-meta { font-size: 0.85rem; white-space: nowrap; }
+.history-day { margin-top: 12px; }
+.history-date { font-size: 0.95rem; margin: 0 0 6px; color: var(--muted); }
+.history-entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.history-entry { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px; }
+.history-thumbs { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.history-thumbs .usage-thumb { width: 44px; height: 44px; }
+.usage-thumb .photo-placeholder { font-size: 1.2rem; }

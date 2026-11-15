@@ -10,6 +10,8 @@ export interface RotationInfo {
   score: number
 }
 
+/** Una prenda usada hace este número de días o menos no puede ser prioritaria. */
+export const RECENT_WEAR_DAYS = 2
 const NEVER_WORN_BASE = 1000
 const MAX_DAYS = 365
 
@@ -52,7 +54,7 @@ export interface RotationResult {
   /**
    * Prendas prioritarias (superior, inferior, calzado, capa exterior): el tercio menos usado de cada
    * espacio (mínimo 1). Si en un espacio ninguna se ha usado nunca, todas lo son.
-   * Los accesorios no cuentan.
+   * Las usadas en los últimos 2 días nunca son prioritarias. Los accesorios no cuentan.
    */
   priorityIds: Set<string>
 }
@@ -74,7 +76,13 @@ export function rankByRotation(garments: Garment[], wears: WearRecord[], today: 
     if (inSlot.every((g) => scores.get(g.id)!.wears === 0)) {
       inSlot.forEach((g) => priorityIds.add(g.id))
     } else {
-      inSlot.slice(0, Math.max(1, Math.ceil(inSlot.length / 3))).forEach((g) => priorityIds.add(g.id))
+      inSlot
+        .slice(0, Math.max(1, Math.ceil(inSlot.length / 3)))
+        .filter((g) => {
+          const d = scores.get(g.id)!.daysSinceWorn
+          return d === null || d > RECENT_WEAR_DAYS
+        })
+        .forEach((g) => priorityIds.add(g.id))
     }
   }
   return { scores, order, priorityIds }

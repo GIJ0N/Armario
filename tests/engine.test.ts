@@ -149,12 +149,29 @@ describe('rotation (paso 2)', () => {
 
   it('con usos: el tercio menos usado de cada espacio, al menos 1', () => {
     const tops = wardrobe30.filter((g) => g.category === 'top')
-    const wears = tops.slice(0, 7).map((g) => ({ garmentIds: [g.id], date: '2026-11-13' }))
+    const wears = tops.slice(0, 7).map((g) => ({ garmentIds: [g.id], date: '2026-11-05' }))
     const r = rankByRotation(tops, wears, TODAY)
     expect(r.priorityIds.size).toBe(Math.ceil(tops.length / 3))
     for (const g of tops.slice(7)) expect(r.priorityIds.has(g.id)).toBe(true)
-    const one = rankByRotation([tops[0]], [{ garmentIds: [tops[0].id], date: TODAY }], TODAY)
+    const one = rankByRotation([tops[0]], [{ garmentIds: [tops[0].id], date: '2026-10-01' }], TODAY)
     expect(one.priorityIds.size).toBe(1)
+  })
+
+  it('las usadas en los últimos 2 días nunca son prioritarias', () => {
+    const tops = wardrobe30.filter((g) => g.category === 'top').slice(0, 3)
+    // a: hoy, b: hace 2 días, c: hace 3 días; el tercio menos usado es 1 prenda.
+    const wears = [
+      { garmentIds: [tops[0].id], date: TODAY },
+      { garmentIds: [tops[1].id], date: '2026-11-12' },
+      { garmentIds: [tops[2].id], date: '2026-11-11' },
+    ]
+    const r = rankByRotation(tops, wears, TODAY)
+    expect(r.priorityIds.has(tops[0].id)).toBe(false)
+    expect(r.priorityIds.has(tops[1].id)).toBe(false)
+    expect(r.priorityIds.has(tops[2].id)).toBe(true)
+    // Si el único candidato del espacio se usó ayer, no hay prioritarias en ese espacio.
+    const one = rankByRotation([tops[0]], [{ garmentIds: [tops[0].id], date: '2026-11-13' }], TODAY)
+    expect(one.priorityIds.size).toBe(0)
   })
 
   it('lista vacía', () => {
