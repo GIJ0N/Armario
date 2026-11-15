@@ -34,7 +34,7 @@ afterEach(() => {
 describe('Ajustes → Respaldo', () => {
   it('muestra Nunca y exporta', async () => {
     actions.exportBackupNow.mockResolvedValue(true)
-    render(<AjustesPage />)
+    render(<RepositoryProvider repository={fakeRepo()}><AjustesPage /></RepositoryProvider>)
     expect(screen.getByTestId('last-backup')).toHaveTextContent('Último respaldo: Nunca')
     await userEvent.click(screen.getByRole('button', { name: 'Exportar respaldo' }))
     expect(await screen.findByText('Respaldo listo.')).toBeInTheDocument()
@@ -42,13 +42,13 @@ describe('Ajustes → Respaldo', () => {
 
   it('muestra la fecha del último respaldo', () => {
     localStorage.setItem(LAST_BACKUP_KEY, new Date(Date.now() - 3 * DAY).toISOString())
-    render(<AjustesPage />)
+    render(<RepositoryProvider repository={fakeRepo()}><AjustesPage /></RepositoryProvider>)
     expect(screen.getByTestId('last-backup')).toHaveTextContent('hace 3 días')
   })
 
   it('restaurar pide confirmación y recarga al terminar', async () => {
     actions.restoreBackupFile.mockResolvedValue({})
-    render(<AjustesPage />)
+    render(<RepositoryProvider repository={fakeRepo()}><AjustesPage /></RepositoryProvider>)
     const file = new File(['x'], 'b.zip', { type: 'application/zip' })
     await userEvent.upload(screen.getByTestId('restore-input'), file)
     expect(screen.getByRole('alertdialog')).toHaveTextContent('Esto reemplaza tu armario actual')
@@ -60,7 +60,7 @@ describe('Ajustes → Respaldo', () => {
 
   it('cancelar no restaura y los errores salen en español', async () => {
     actions.restoreBackupFile.mockRejectedValue(new BackupError('El archivo no es un respaldo válido.'))
-    render(<AjustesPage />)
+    render(<RepositoryProvider repository={fakeRepo()}><AjustesPage /></RepositoryProvider>)
     const file = new File(['x'], 'b.zip')
     await userEvent.upload(screen.getByTestId('restore-input'), file)
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))

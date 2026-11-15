@@ -1,6 +1,7 @@
-import type { Garment, Outfit, Repository, Wear, WearEntry } from '../../src/db'
+import type { FeedbackEntry, Garment, Outfit, Repository, Wear, WearEntry } from '../../src/db'
 import { computeWearStats } from '../../src/db/wearStats'
 import { addDays, localDateString } from '../../src/lib/date'
+import { memoryFeedback } from './memoryFeedback'
 import { wardrobe30 } from './wardrobe30'
 
 /** Repositorio en memoria para pruebas de UI. */
@@ -20,7 +21,11 @@ export function fakeRepo(garments: Garment[] = wardrobe30) {
       }))
       .reverse()
       .sort((a, b) => b.date.localeCompare(a.date))
-  const repo: Repository & { saved: Outfit[]; savedWears: Wear[] } = {
+  const mem = memoryFeedback(() => outfits)
+  const repo: Repository & { saved: Outfit[]; savedWears: Wear[]; ratings: FeedbackEntry[] } = {
+    feedback: mem.feedback,
+    taste: mem.taste,
+    ratings: mem.rows,
     saved: outfits,
     savedWears: wears,
     outfits: {

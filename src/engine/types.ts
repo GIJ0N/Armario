@@ -1,4 +1,5 @@
 import type { Garment, Occasion } from '../db/types'
+import type { TastePreferences } from './taste'
 
 /** Clima del día. `precipProbability` es un porcentaje 0-100. */
 export interface Weather {
@@ -43,6 +44,12 @@ export interface EngineContext {
   recentOutfits: RecentOutfit[]
   /** YYYY-MM-DD (fecha local). */
   today: string
+  /** Fase 5: preferencias deterministas calculadas de las calificaciones. */
+  taste?: TastePreferences
+  /** Fase 5: perfil de gusto en texto (solo para el prompt del estilista). */
+  tasteSummary?: string
+  /** Fase 5: outfits con «me gusta» (hasta 5) como ejemplos del prompt. */
+  likedOutfits?: { garmentIds: string[]; reasoning: string }[]
 }
 
 export type OutfitValidation = { ok: true } | { ok: false; errors: string[] }

@@ -67,3 +67,41 @@ export interface Outfit extends OutfitInput {
   id: string
   created_at: string
 }
+
+export const RATINGS = ['like', 'dislike'] as const
+export type Rating = (typeof RATINGS)[number]
+export const DISLIKE_TAGS = [
+  'too_formal',
+  'too_casual',
+  'colors',
+  'fit',
+  'weather',
+  'repetitive',
+  'uncomfortable',
+] as const
+export const LIKE_TAGS = ['perfect_occasion', 'colors', 'comfortable', 'new_combo'] as const
+export type DislikeTag = (typeof DISLIKE_TAGS)[number]
+export type LikeTag = (typeof LIKE_TAGS)[number]
+export const TAGS_BY_RATING: Record<Rating, readonly string[]> = { like: LIKE_TAGS, dislike: DISLIKE_TAGS }
+
+/** Calificación de un outfit con los datos del outfit (unión feedback + outfits). */
+export interface FeedbackEntry {
+  id: string
+  outfitId: string
+  rating: Rating
+  tags: string[]
+  comment: string
+  /** ISO */
+  createdAt: string
+  garmentIds: string[]
+  occasion: Occasion
+  reasoning: string
+}
+
+export interface TasteProfile {
+  summary: string
+  /** ISO: última vez que se guardó o reinició el perfil. */
+  updatedAt: string
+  /** ISO: último «Reiniciar gusto» ('' si nunca). */
+  resetAt: string
+}

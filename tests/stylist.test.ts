@@ -46,7 +46,7 @@ describe('prompt del estilista', () => {
     const u = buildStylistUser({
       ...input,
       tasteProfile: 'Prefiere looks sobrios.',
-      likedExamples: [{ garment_ids: ['a'], reasoning: 'Me gustó' }],
+      likedExamples: [{ garments: [{ category: 'top', subcategory: 'polo', colors: ['azul'], pattern: 'liso', material: 'algodón', fit: 'regular', formality: 3, warmth: 2, is_statement: false }], reasoning: 'Me gustó' }],
       errors: ['Unknown garment id "x".'],
     })
     expect(u).toContain('Prefiere looks sobrios.')

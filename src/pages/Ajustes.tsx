@@ -4,6 +4,8 @@ import { GeminiProvider } from '../ai/gemini'
 import { AiNotConfiguredError, describeAiError } from '../ai/errors'
 import { useAi } from '../ai/AiProviderContext'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { useRepository } from '../components/RepositoryContext'
+import type { Repository } from '../db'
 import { BackupError } from '../db/backup'
 import { exportBackupNow, reloadApp, restoreBackupFile } from '../lib/backupActions'
 import { describeLastBackup, getLastBackupAt, useBackupStateVersion } from '../lib/backupState'
@@ -11,13 +13,50 @@ import { useSettings } from '../settings'
 
 type Probe = { kind: 'idle' } | { kind: 'running' } | { kind: 'ok' } | { kind: 'error'; message: string }
 
+interface TasteView {
+  summary: string
+  likes: number
+  dislikes: number
+}
+
+async function fetchTaste(repo: Repository): Promise<TasteView | null> {
+  try {
+    const [profile, recent] = await Promise.all([repo.taste.get(), repo.feedback.listRecent(1000)])
+    const active = profile?.resetAt ? recent.filter((e) => e.createdAt > profile.resetAt) : recent
+    return {
+      summary: profile?.summary ?? '',
+      likes: active.filter((e) => e.rating === 'like').length,
+      dislikes: active.filter((e) => e.rating === 'dislike').length,
+    }
+  } catch {
+    return null
+  }
+}
+
 const pingSchema = z.object({ ok: z.boolean() })
 
 export default function AjustesPage() {
   const [settings, update] = useSettings()
   const ai = useAi()
+  const repo = useRepository()
+  const [taste, setTaste] = useState<TasteView | null>(null)
+  const [resetting, setResetting] = useState(false)
   const [show, setShow] = useState(false)
   const [probe, setProbe] = useState<Probe>({ kind: 'idle' })
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchTaste(repo).then((t) => !cancelled && setTaste(t))
+    return () => {
+      cancelled = true
+    }
+  }, [repo])
+
+  async function resetTaste() {
+    setResetting(false)
+    await repo.taste.reset()
+    setTaste(await fetchTaste(repo))
+  }
 
   const backupVersion = useBackupStateVersion()
   const [exporting, setExporting] = useState(false)
@@ -151,6 +190,26 @@ export default function AjustesPage() {
           <input value={settings.city} onChange={(e) => update({ city: e.target.value })} />
         </label>
 
+        <h2 className="section-title">Gusto</h2>
+        {taste && (
+          <>
+            <p className="taste-summary" data-testid="taste-summary">
+              {taste.summary || 'Todavía no hay un perfil de gusto. Se crea después de 10 calificaciones nuevas.'}
+            </p>
+            <p className="page-hint" data-testid="taste-counts">
+              Calificaciones: {taste.likes + taste.dislikes} ({taste.likes} me gusta, {taste.dislikes} no me gusta)
+            </p>
+            <button
+              type="button"
+              className="btn"
+              disabled={taste.likes + taste.dislikes === 0 && !taste.summary}
+              onClick={() => setResetting(true)}
+            >
+              Reiniciar gusto
+            </button>
+          </>
+        )}
+
         <h2 className="section-title">Respaldo</h2>
         <p className="page-hint">
           Tu armario vive solo en este dispositivo. Exporta un zip (base y fotos) y guárdalo en Archivos o iCloud
@@ -190,6 +249,15 @@ export default function AjustesPage() {
           {persisted === null ? 'no disponible' : persisted ? 'sí' : 'no (iOS puede borrar los datos si no usas la app)'}
         </p>
       </div>
+      {resetting && (
+        <ConfirmDialog
+          title="¿Reiniciar tu gusto?"
+          message="Se borrará el perfil de gusto y dejarán de influir las calificaciones anteriores. Tus calificaciones se conservan."
+          confirmLabel="Reiniciar"
+          onConfirm={() => void resetTaste()}
+          onCancel={() => setResetting(false)}
+        />
+      )}
       {pendingFile && (
         <ConfirmDialog
           title="Restaurar respaldo"

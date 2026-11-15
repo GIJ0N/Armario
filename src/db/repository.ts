@@ -5,12 +5,16 @@ import type { Storage } from './storage'
 import { computeWearStats, type WearStats } from './wearStats'
 import {
   garmentInputSchema,
+  TAGS_BY_RATING,
+  type FeedbackEntry,
   type Garment,
   type GarmentFilter,
   type GarmentInput,
   type Occasion,
   type Outfit,
   type OutfitInput,
+  type Rating,
+  type TasteProfile,
 } from './types'
 
 /** Interfaz de acceso a prendas y fotos; la UI solo depende de esto. */
@@ -67,10 +71,33 @@ export interface WearRepository {
   stats(now?: Date): Promise<WearStats>
 }
 
+/** Calificaciones de outfits (fase 5): una por outfit. */
+export interface FeedbackRepository {
+  /** Crea o reemplaza la calificación del outfit. Los motivos deben corresponder a la calificación. */
+  rate(outfitId: string, rating: Rating, tags: string[], comment?: string, now?: Date): Promise<FeedbackEntry>
+  get(outfitId: string): Promise<FeedbackEntry | null>
+  /** Más recientes primero. */
+  listRecent(limit: number): Promise<FeedbackEntry[]>
+  /** Calificaciones hechas después de `since` (ISO; '' = todas). */
+  countSince(since: string): Promise<number>
+  /** Outfits con «me gusta», más recientes primero. */
+  likedOutfits(limit: number): Promise<FeedbackEntry[]>
+}
+
+/** Perfil de gusto en texto (una sola fila). */
+export interface TasteProfileRepository {
+  get(): Promise<TasteProfile | null>
+  save(summary: string, now?: Date): Promise<TasteProfile>
+  /** «Reiniciar gusto»: borra el texto y marca la fecha; las calificaciones se conservan. */
+  reset(now?: Date): Promise<TasteProfile>
+}
+
 /** Todo lo que la UI necesita del almacenamiento. */
 export interface Repository extends GarmentRepository {
   readonly outfits: OutfitRepository
   readonly wears: WearRepository
+  readonly feedback: FeedbackRepository
+  readonly taste: TasteProfileRepository
 }
 
 type Row = Record<string, unknown>
@@ -120,6 +147,23 @@ function rowToWearEntry(row: Row): WearEntry {
   }
 }
 
+function rowToFeedback(row: Row): FeedbackEntry {
+  return {
+    id: row.id as string,
+    outfitId: row.outfit_id as string,
+    rating: row.rating as Rating,
+    tags: JSON.parse(row.tags as string),
+    comment: row.comment as string,
+    createdAt: row.created_at as string,
+    garmentIds: JSON.parse(row.garment_ids as string),
+    occasion: row.occasion as Occasion,
+    reasoning: row.reasoning as string,
+  }
+}
+
+const FEEDBACK_SELECT = `SELECT f.id, f.outfit_id, f.rating, f.tags, f.comment, f.created_at,
+  o.garment_ids, o.occasion, o.reasoning FROM feedback f JOIN outfits o ON o.id = f.outfit_id`
+
 const WEAR_SELECT = `SELECT w.id AS wid, w.outfit_id, w.date, o.garment_ids, o.occasion, o.reasoning
   FROM wears w JOIN outfits o ON o.id = w.outfit_id`
 
@@ -154,6 +198,32 @@ export class SqliteGarmentRepository implements Repository {
       const wears = this.db.selectObjects(`${WEAR_SELECT}`).map(rowToWearEntry)
       return computeWearStats(garments, wears, localDateString(now))
     },
+  }
+
+  readonly feedback: FeedbackRepository = {
+    rate: (outfitId, rating, tags, comment, now) => this.rate(outfitId, rating, tags, comment, now),
+    get: async (outfitId) => {
+      const rows = this.db.selectObjects(`${FEEDBACK_SELECT} WHERE f.outfit_id = ?`, [outfitId])
+      return rows.length ? rowToFeedback(rows[0]) : null
+    },
+    listRecent: async (limit) =>
+      this.db
+        .selectObjects(`${FEEDBACK_SELECT} ORDER BY f.created_at DESC, f.rowid DESC LIMIT ?`, [limit])
+        .map(rowToFeedback),
+    countSince: async (since) =>
+      Number(this.db.selectValue('SELECT COUNT(*) FROM feedback WHERE created_at > ?', [since]) ?? 0),
+    likedOutfits: async (limit) =>
+      this.db
+        .selectObjects(`${FEEDBACK_SELECT} WHERE f.rating = 'like' ORDER BY f.created_at DESC, f.rowid DESC LIMIT ?`, [
+          limit,
+        ])
+        .map(rowToFeedback),
+  }
+
+  readonly taste: TasteProfileRepository = {
+    get: async () => this.readTaste(),
+    save: (summary, now = new Date()) => this.writeTaste(summary, now, false),
+    reset: (now = new Date()) => this.writeTaste('', now, true),
   }
 
   private queue: Promise<unknown> = Promise.resolve()
@@ -329,6 +399,66 @@ export class SqliteGarmentRepository implements Repository {
       this.db.exec({ sql: 'INSERT INTO wears (id, outfit_id, date) VALUES (?,?,?)', bind: [id, outfitId, date] })
       return { id, outfit_id: outfitId, date }
     })
+  }
+
+  private async rate(
+    outfitId: string,
+    rating: Rating,
+    tags: string[],
+    comment = '',
+    now: Date = new Date(),
+  ): Promise<FeedbackEntry> {
+    const allowed = TAGS_BY_RATING[rating]
+    const clean = [...new Set(tags)]
+    const bad = clean.find((t) => !allowed.includes(t))
+    if (bad) throw new Error(`Motivo no válido para esta calificación: ${bad}`)
+    if (rating !== 'like' && rating !== 'dislike') throw new Error('Calificación no válida')
+    await this.write(() => {
+      if (this.db.selectValue('SELECT 1 FROM outfits WHERE id = ?', [outfitId]) === undefined) {
+        throw new Error('Outfit no encontrado')
+      }
+      const existing = this.db.selectValue('SELECT id FROM feedback WHERE outfit_id = ?', [outfitId])
+      const created_at = now.toISOString()
+      if (existing !== undefined) {
+        this.db.exec({
+          sql: 'UPDATE feedback SET rating=?, tags=?, comment=?, created_at=? WHERE outfit_id=?',
+          bind: [rating, JSON.stringify(clean), comment.trim(), created_at, outfitId],
+        })
+      } else {
+        this.db.exec({
+          sql: 'INSERT INTO feedback (id, outfit_id, rating, tags, comment, created_at) VALUES (?,?,?,?,?,?)',
+          bind: [crypto.randomUUID(), outfitId, rating, JSON.stringify(clean), comment.trim(), created_at],
+        })
+      }
+    })
+    return (await this.feedback.get(outfitId))!
+  }
+
+  private readTaste(): TasteProfile | null {
+    const rows = this.db.selectObjects('SELECT summary, updated_at, reset_at FROM taste_profile LIMIT 1')
+    if (!rows.length) return null
+    return {
+      summary: rows[0].summary as string,
+      updatedAt: rows[0].updated_at as string,
+      resetAt: rows[0].reset_at as string,
+    }
+  }
+
+  private async writeTaste(summary: string, now: Date, reset: boolean): Promise<TasteProfile> {
+    const previous = this.readTaste()
+    const profile: TasteProfile = {
+      summary,
+      updatedAt: now.toISOString(),
+      resetAt: reset ? now.toISOString() : (previous?.resetAt ?? ''),
+    }
+    await this.write(() => {
+      this.db.exec('DELETE FROM taste_profile')
+      this.db.exec({
+        sql: 'INSERT INTO taste_profile (summary, updated_at, reset_at) VALUES (?,?,?)',
+        bind: [profile.summary, profile.updatedAt, profile.resetAt],
+      })
+    })
+    return profile
   }
 
   async savePhoto(blob: Blob) {
