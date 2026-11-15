@@ -366,3 +366,32 @@ test('editar un outfit en Hoy cambiando la prenda superior y guardarlo; aparece 
   await expect(page.getByTestId('saved-name')).toHaveText('Mi outfit e2e')
   await expect(page.getByTestId('saved-last-worn')).toHaveText('Aún sin usar')
 })
+
+test('una imagen PNG con fondo transparente se usa como recorte, sin el modelo', async ({ page }) => {
+  // PNG sintético: prenda roja de 300x400 sobre un lienzo transparente de 600x800 (nada de fotos reales).
+  const file = join(mkdtempSync(join(tmpdir(), 'armario-e2e-')), 'prenda-recortada.png')
+  const garment = await sharp({ create: { width: 300, height: 400, channels: 4, background: '#cc2222' } }).png().toBuffer()
+  await sharp({ create: { width: 600, height: 800, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: garment, left: 150, top: 200 }])
+    .png()
+    .toFile(file)
+
+  await page.goto('./#/agregar')
+  await page.getByTestId('gallery-input').setInputFiles(file)
+  await expect(page.getByText('Sin fondo (del iPhone)')).toBeVisible()
+  await page.getByLabel('Categoría *').selectOption('top')
+  await page.getByLabel('Subcategoría').fill('Playera roja')
+  await page.getByLabel('Formalidad *').selectOption('2')
+  await page.getByLabel('Abrigo *').selectOption('2')
+  await page.getByRole('button', { name: 'Guardar prenda' }).click()
+
+  await expect(page.getByRole('heading', { level: 1, name: 'Armario' })).toBeVisible()
+  // El modelo no está descargado ni la IA configurada: cualquier recorte en la tarjeta viene de la imagen.
+  const img = page.locator('.card img.garment-img-cutout')
+  await expect(img).toBeVisible()
+  const size = await img.evaluate((el: HTMLImageElement) => ({ w: el.naturalWidth, h: el.naturalHeight }))
+  // Recortada al contenido (300x400) más ~3 % de margen: bastante menos que el lienzo de 600x800.
+  expect(size.w).toBeLessThan(400)
+  expect(size.h).toBeLessThan(500)
+  expect(size.w).toBeGreaterThanOrEqual(300)
+})

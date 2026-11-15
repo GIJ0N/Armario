@@ -13,6 +13,7 @@ import { CUTOUT_MODEL } from '../cutout/modelConfig'
 import { cachedModelBytes } from '../cutout/modelStore'
 import type { EnginePreference } from '../cutout/protocol'
 import type { Garment } from '../db'
+import { CutoutGuideButton } from './CutoutGuideSheet'
 import { useRepository } from './RepositoryContext'
 
 function megabytes(bytes: number) {
@@ -219,6 +220,7 @@ export function CutoutSettings() {
   return (
     <>
       <h2 className="section-title">Recorte de fondo</h2>
+      <p className="page-hint">Lo recomendado: quita el fondo con tu iPhone (Fotos o Archivos) y pega o elige la imagen; el modelo de abajo es opcional. <CutoutGuideButton className="btn btn-quiet btn-inline" /></p>
       <p className="page-hint">
         Quita el fondo de las fotos en tu teléfono con el modelo {CUTOUT_MODEL.name}. Se descarga una sola vez
         (conviene con Wi-Fi) y después funciona sin conexión. La foto original siempre se conserva.

@@ -689,3 +689,20 @@ button { -webkit-appearance: none; appearance: none; }
 .saved-name { font-family: var(--font-display); font-size: 1.05rem; overflow-wrap: anywhere; }
 .saved-actions { display: flex; flex-direction: column; gap: var(--space-2); margin-top: auto; padding-top: var(--space-3); }
 .saved-actions .btn { justify-content: center; }
+
+/* Recorte provisto (iPhone): insignia, destino de pegado, guía, aviso compacto */
+.photo-box { position: relative; }
+.photo-badge { position: absolute; left: var(--space-2); top: var(--space-2); background: var(--surface); color: var(--text); box-shadow: 0 1px 2px var(--cutout-shadow); }
+.paste-target {
+  display: flex; align-items: center; gap: var(--space-2); min-height: var(--tap); padding: 0 var(--space-3);
+  border: 1px dashed var(--border); border-radius: var(--radius-m); color: var(--text-muted); font-size: 0.9rem; cursor: text;
+}
+.paste-target:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.guide { display: flex; flex-direction: column; gap: var(--space-2); }
+.guide-heading { margin: var(--space-2) 0 0; font-size: 1rem; }
+.guide-steps { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: var(--space-2); }
+.cutout-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.banner-compact { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+.banner-compact strong { flex: 1 1 auto; min-width: 0; font-size: 0.92rem; }
+.banner-compact .form-error { flex-basis: 100%; font-size: 0.85rem; }
+.banner-compact .icon-btn { width: var(--tap); height: var(--tap); }

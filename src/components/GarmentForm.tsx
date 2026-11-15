@@ -18,8 +18,10 @@ import {
   type Status,
 } from '../db'
 import type { TaggedGarment } from '../ai/provider'
-import { resizeImage } from '../lib/image'
+import { preparePhoto } from '../cutout/provided'
+import { CutoutGuideButton } from './CutoutGuideSheet'
 import { GarmentPhoto } from './GarmentPhoto'
+import { PasteCutoutButton } from './PasteCutoutButton'
 
 export interface GarmentFormSubmit {
   data: GarmentData
@@ -27,6 +29,8 @@ export interface GarmentFormSubmit {
   newPhoto: Blob | null
   /** true si se quitó la foto existente. */
   removePhoto: boolean
+  /** Recorte que ya traía la imagen elegida (PNG con transparencia del iPhone); null si no. */
+  providedCutout: Blob | null
 }
 
 interface Props {
@@ -61,9 +65,9 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
   const [status, setStatus] = useState<string>(fixedStatus ?? initial?.status ?? 'active')
   const [notes, setNotes] = useState(initial?.notes ?? '')
 
-  const [photo, setPhoto] = useState<{ blob: Blob; url: string } | null>(null)
+  const [photo, setPhoto] = useState<{ blob: Blob; url: string; cutout: Blob | null; cutoutUrl: string | null } | null>(null)
   const newPhoto = photo?.blob ?? null
-  const previewUrl = photo?.url ?? null
+  const previewUrl = photo?.cutoutUrl ?? photo?.url ?? null
   const [removePhoto, setRemovePhoto] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -92,7 +96,10 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
 
   useEffect(() => {
     if (!photo) return
-    return () => URL.revokeObjectURL(photo.url)
+    return () => {
+      URL.revokeObjectURL(photo.url)
+      if (photo.cutoutUrl) URL.revokeObjectURL(photo.cutoutUrl)
+    }
   }, [photo])
 
   useEffect(() => {
@@ -111,8 +118,13 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
     if (!file) return
     setError(null)
     try {
-      const blob = await resizeImage(file)
-      setPhoto({ blob, url: URL.createObjectURL(blob) })
+      const { photo: blob, providedCutout } = await preparePhoto(file)
+      setPhoto({
+        blob,
+        url: URL.createObjectURL(blob),
+        cutout: providedCutout,
+        cutoutUrl: providedCutout ? URL.createObjectURL(providedCutout) : null,
+      })
       setRemovePhoto(false)
       onPhotoChange?.(blob)
     } catch (e) {
@@ -148,7 +160,7 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
     if (!parsed.success) return setError('Revisa los datos de la prenda.')
     setSaving(true)
     try {
-      await onSubmit({ data: parsed.data, newPhoto, removePhoto })
+      await onSubmit({ data: parsed.data, newPhoto, removePhoto, providedCutout: photo?.cutout ?? null })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar.')
       setSaving(false)
@@ -161,7 +173,14 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
     <form className="garment-form" onSubmit={handleSubmit} noValidate>
       <div className={`photo-box${previewUrl || hasExisting ? '' : ' photo-box-empty'}`}>
         {previewUrl ? (
-          <img className="garment-img" src={previewUrl} alt="Vista previa de la foto" />
+          <>
+            <img
+              className="garment-img"
+              src={previewUrl}
+              alt={photo?.cutoutUrl ? 'Vista previa de la prenda sin fondo' : 'Vista previa de la foto'}
+            />
+            {photo?.cutoutUrl && <span className="badge photo-badge">Sin fondo (del iPhone)</span>}
+          </>
         ) : hasExisting ? (
           <GarmentPhoto photoPath={initial.photo_path} alt="Foto de la prenda" />
         ) : (
@@ -180,6 +199,7 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
           <Images size={18} aria-hidden="true" />
           Elegir de la galería
         </button>
+        <PasteCutoutButton onFile={(f) => void onFile(f)} />
         {(hasExisting || newPhoto) && (
           <button
             type="button"
@@ -194,6 +214,7 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
           </button>
         )}
       </div>
+      {!initial && <CutoutGuideButton />}
       {aiSlot}
       {aiFields && (
         <p className="ai-note" data-testid="ai-suggested">

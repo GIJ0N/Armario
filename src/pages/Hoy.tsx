@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAi } from '../ai/AiProviderContext'
 import type { AiProvider } from '../ai/provider'
 import { LaundrySheet } from '../components/LaundrySheet'
+import { subscribeCutoutChanged } from '../cutout/events'
 import { OutfitEditFlow, type EditTarget } from '../components/OutfitEditFlow'
 import { OutfitCard, type CardOutfit } from '../components/OutfitCard'
 import { OutfitCarousel } from '../components/OutfitCarousel'
@@ -73,6 +74,28 @@ export default function HoyPage() {
   const runId = useRef(0)
   /** Outfits ya mostrados en esta sesión (solo en memoria): «Otras opciones» no los repite. */
   const shown = useRef<string[][]>([])
+
+  // Un recorte nuevo (en segundo plano o pegado) se refleja en las tarjetas ya mostradas.
+  useEffect(
+    () =>
+      subscribeCutoutChanged((id) => {
+        void repo.get(id).then((fresh) => {
+          if (!fresh) return
+          setSuggestions((cur) => {
+            const old = cur?.garments.get(id)
+            if (!cur || !old) return cur
+            return { ...cur, garments: new Map(cur.garments).set(id, { ...old, cutout_path: fresh.cutout_path, cutout_kind: fresh.cutout_kind }) }
+          })
+        })
+      }),
+    [repo],
+  )
+
+  // El chip de ocasión activo se centra en la fila deslizable.
+  const activeChip = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    activeChip.current?.scrollIntoView?.({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+  }, [occasion])
 
   useEffect(() => {
     let cancelled = false
@@ -314,6 +337,7 @@ export default function HoyPage() {
         {OCCASIONS.map((o) => (
           <button
             key={o}
+            ref={o === occasion ? activeChip : undefined}
             type="button"
             className={`chip${o === occasion ? ' chip-active' : ''}`}
             aria-pressed={o === occasion}
