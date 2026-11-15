@@ -6,6 +6,15 @@ export * from './wearStats'
 export type { Storage } from './storage'
 export * from './types'
 export * from './labels'
+export { BackupError } from './backup'
+
+let storage: IndexedDbStorage | null = null
+
+/** Almacenamiento compartido (instantánea + fotos); lo usan el repositorio y el respaldo. */
+export function getStorage(): IndexedDbStorage {
+  storage ??= new IndexedDbStorage()
+  return storage
+}
 
 let repoPromise: Promise<Repository> | null = null
 
@@ -13,7 +22,7 @@ let repoPromise: Promise<Repository> | null = null
 export function getRepository(): Promise<Repository> {
   if (!repoPromise) {
     void navigator.storage?.persist?.()
-    repoPromise = SqliteGarmentRepository.open(new IndexedDbStorage())
+    repoPromise = SqliteGarmentRepository.open(getStorage())
     repoPromise.catch(() => {
       repoPromise = null
     })

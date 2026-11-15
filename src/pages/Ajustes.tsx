@@ -1,8 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { GeminiProvider } from '../ai/gemini'
 import { AiNotConfiguredError, describeAiError } from '../ai/errors'
 import { useAi } from '../ai/AiProviderContext'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { BackupError } from '../db/backup'
+import { exportBackupNow, reloadApp, restoreBackupFile } from '../lib/backupActions'
+import { describeLastBackup, getLastBackupAt, useBackupStateVersion } from '../lib/backupState'
 import { useSettings } from '../settings'
 
 type Probe = { kind: 'idle' } | { kind: 'running' } | { kind: 'ok' } | { kind: 'error'; message: string }
@@ -14,6 +18,58 @@ export default function AjustesPage() {
   const ai = useAi()
   const [show, setShow] = useState(false)
   const [probe, setProbe] = useState<Probe>({ kind: 'idle' })
+
+  const backupVersion = useBackupStateVersion()
+  const [exporting, setExporting] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [backupMsg, setBackupMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [persisted, setPersisted] = useState<boolean | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    let alive = true
+    const p = navigator.storage?.persisted?.()
+    p?.then(
+      (v) => alive && setPersisted(v),
+      () => undefined,
+    )
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // `backupVersion` fuerza la relectura de la fecha del último respaldo.
+  void backupVersion
+  const lastBackup = describeLastBackup(getLastBackupAt())
+
+  async function exportBackup() {
+    setExporting(true)
+    setBackupMsg(null)
+    try {
+      if (await exportBackupNow()) setBackupMsg({ kind: 'ok', text: 'Respaldo listo.' })
+    } catch (e) {
+      setBackupMsg({ kind: 'error', text: e instanceof Error ? e.message : 'No se pudo crear el respaldo.' })
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function restore(file: File) {
+    setPendingFile(null)
+    setRestoring(true)
+    setBackupMsg(null)
+    try {
+      await restoreBackupFile(file)
+      reloadApp()
+    } catch (e) {
+      setRestoring(false)
+      setBackupMsg({
+        kind: 'error',
+        text: e instanceof BackupError ? e.message : 'No se pudo restaurar el respaldo. Tus datos actuales no cambiaron.',
+      })
+    }
+  }
 
   async function test() {
     setProbe({ kind: 'running' })
@@ -94,7 +150,55 @@ export default function AjustesPage() {
           <span>Ciudad (para el clima)</span>
           <input value={settings.city} onChange={(e) => update({ city: e.target.value })} />
         </label>
+
+        <h2 className="section-title">Respaldo</h2>
+        <p className="page-hint">
+          Tu armario vive solo en este dispositivo. Exporta un zip (base y fotos) y guárdalo en Archivos o iCloud
+          Drive. No incluye tu API key.
+        </p>
+        <p className="page-hint" data-testid="last-backup">
+          Último respaldo: {lastBackup}
+        </p>
+        <button type="button" className="btn btn-primary" onClick={() => void exportBackup()} disabled={exporting || restoring}>
+          {exporting ? 'Preparando…' : 'Exportar respaldo'}
+        </button>
+        <button type="button" className="btn" onClick={() => fileInput.current?.click()} disabled={exporting || restoring}>
+          {restoring ? 'Restaurando…' : 'Restaurar respaldo'}
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".zip,application/zip"
+          hidden
+          data-testid="restore-input"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (file) setPendingFile(file)
+          }}
+        />
+        <div aria-live="polite">
+          {backupMsg?.kind === 'ok' && <p className="ok-msg">{backupMsg.text}</p>}
+          {backupMsg?.kind === 'error' && (
+            <p role="alert" className="form-error">
+              {backupMsg.text}
+            </p>
+          )}
+        </div>
+        <p className="page-hint" data-testid="persisted">
+          Almacenamiento persistente:{' '}
+          {persisted === null ? 'no disponible' : persisted ? 'sí' : 'no (iOS puede borrar los datos si no usas la app)'}
+        </p>
       </div>
+      {pendingFile && (
+        <ConfirmDialog
+          title="Restaurar respaldo"
+          message="Esto reemplaza tu armario actual por el contenido del respaldo. Se guarda una copia de seguridad de tus datos actuales antes de reemplazarlos."
+          confirmLabel="Restaurar"
+          onConfirm={() => void restore(pendingFile)}
+          onCancel={() => setPendingFile(null)}
+        />
+      )}
     </section>
   )
 }
