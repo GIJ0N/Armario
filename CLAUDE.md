@@ -26,7 +26,7 @@ Antes de cerrar una fase, lint, typecheck, test y build deben pasar sin errores.
 
 ## Almacenamiento
 
-SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción de escritura se exporta la base completa (`sqlite3_js_db_export`) a IndexedDB y al abrir se restaura con `sqlite3_deserialize`; no se usa OPFS (GitHub Pages no permite COOP/COEP y OPFS es irregular en iOS). Las fotos son Blobs en otro object store de IndexedDB; `garments.photo_path` guarda la clave (`photo:<uuid>`). La UI solo usa `GarmentRepository` (`src/db/repository.ts`) y el adaptador `Storage` (`src/db/storage.ts`), de modo que el backend se puede reemplazar. Migraciones en `src/db/migrations/`, con `PRAGMA user_version`. La migración 0005 agrega `garments.cutout_path` y `cutout_kind` (ver «Recorte de fondo»); la 0006, `garments.favorite`, `outfits.saved_at`/`name` y la tabla `outfit_swaps` (ver «Edición y favoritos»); la 0007, `garments.canvas_adjust` y `outfits.canvas_layout` (JSON nulos, ver «Lienzo ajustable»).
+SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción de escritura se exporta la base completa (`sqlite3_js_db_export`) a IndexedDB y al abrir se restaura con `sqlite3_deserialize`; no se usa OPFS (GitHub Pages no permite COOP/COEP y OPFS es irregular en iOS). Las fotos son Blobs en otro object store de IndexedDB; `garments.photo_path` guarda la clave (`photo:<uuid>`). La UI solo usa `GarmentRepository` (`src/db/repository.ts`) y el adaptador `Storage` (`src/db/storage.ts`), de modo que el backend se puede reemplazar. Migraciones en `src/db/migrations/`, con `PRAGMA user_version`. La migración 0005 agrega `garments.cutout_path` y `cutout_kind` (ver «Recorte de fondo»); la 0006, `garments.favorite`, `outfits.saved_at`/`name` y la tabla `outfit_swaps` (ver «Edición y favoritos»); la 0007, `garments.canvas_adjust` y `outfits.canvas_layout` (JSON nulos, ver «Lienzo ajustable»); la 0008, la tabla `planned_outfits` (ver «Calendario»).
 
 ## IA
 
@@ -41,7 +41,7 @@ SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción
 
 ## Estado
 
-Fase actual: 13a completada (lienzo ajustable y compartir); pendiente: calendario, costo por uso, viaje
+Fase actual: 13b completada (calendario y plan semanal); pendiente opcional: costo por uso, lista de viaje
 
 ## Gusto
 
