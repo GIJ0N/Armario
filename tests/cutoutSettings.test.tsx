@@ -37,6 +37,23 @@ async function setup(options: MockRemoverOptions = {}, count = 3, withCutout = 0
 }
 
 describe('Ajustes › Recorte de fondo', () => {
+  it('«Rehacer todos los recortes» vuelve a recortar también las prendas que ya tenían recorte', async () => {
+    const { repo, remover } = await setup({}, 3, 2)
+    await userEvent.click(await screen.findByRole('button', { name: 'Rehacer todos los recortes (3)' }))
+    expect(await screen.findByText(/3 prendas con recorte\./)).toBeInTheDocument()
+    expect(remover.removeCalls).toHaveLength(3)
+    expect(repo.garments.every((g) => g.cutout_kind === 'mask')).toBe(true)
+  })
+
+  it('«Rehacer todos los recortes» se puede cancelar', async () => {
+    const { remover } = await setup({ delayMs: 30 }, 4, 4)
+    await userEvent.click(await screen.findByRole('button', { name: 'Rehacer todos los recortes (4)' }))
+    expect(await screen.findByRole('progressbar', { name: 'Avance del procesamiento' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(await screen.findByText(/Cancelado\./)).toBeInTheDocument()
+    expect(remover.removeCalls.length).toBeLessThan(4)
+  })
+
   it('muestra el estado del modelo y lo descarga con avance solo al pulsar el botón', async () => {
     const { remover } = await setup({ downloaded: false, delayMs: 40 })
     expect(await screen.findByTestId('cutout-model-state')).toHaveTextContent('No descargado')

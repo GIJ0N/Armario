@@ -3,6 +3,7 @@ import {
   CANVAS_H,
   CANVAS_W,
   DEFAULT_ASPECT,
+  TUCK_OVERLAP,
   ZONES,
   accessoryKind,
   canRenderCanvas,
@@ -160,12 +161,76 @@ describe('layoutOutfit: relación de aspecto', () => {
 })
 
 describe('layoutOutfit: mosaico enmarcado', () => {
-  it('una imagen sin transparencia ocupa un mosaico cuadrado más chico que la zona', () => {
-    const framed = box(layoutOutfit([item('t', 'top', 'Playera', 0.5, true)]), 't')
+  it('una foto sin transparencia ocupa ~80 % de la altura de su zona y conserva su forma', () => {
+    const framed = box(layoutOutfit([item('t', 'top', 'Playera', 0.9, true)]), 't')
     expect(framed.framed).toBe(true)
-    expect(framed.w).toBeCloseTo(framed.h)
-    expect(framed.w).toBeLessThan(ZONES.torso.w)
+    expect(framed.h).toBeCloseTo(ZONES.torso.h * 0.8, 0)
+    expect(framed.w / framed.h).toBeCloseTo(0.9, 1)
     expect(framed.x + framed.w / 2).toBeCloseTo(CANVAS_W / 2)
+    expect(framed.y).toBeGreaterThanOrEqual(ZONES.torso.y)
+    expect(framed.y + framed.h).toBeLessThanOrEqual(ZONES.torso.y + ZONES.torso.h)
+  })
+  it('el mosaico de un pantalón se ancla en las piernas: de la cintura hacia los tobillos', () => {
+    const t = box(layoutOutfit([item('p', 'bottom', 'Jeans', 0.75, true)]), 'p')
+    expect(t.zone).toBe('legs')
+    expect(t.h).toBeGreaterThan(ZONES.legs.h * 0.75)
+    expect(t.y).toBeGreaterThanOrEqual(ZONES.legs.y)
+    expect(t.y + t.h).toBeLessThanOrEqual(ZONES.legs.y + ZONES.legs.h)
+    expect(t.y + t.h).toBeGreaterThan(450)
+  })
+  it('los zapatos enmarcados se anclan abajo; sin relación conocida usa la típica acotada', () => {
+    const s = box(layoutOutfit([item('s', 'shoes', 'Tenis', null, true)]), 's')
+    expect(s.y + s.h).toBeLessThanOrEqual(ZONES.feet.y + ZONES.feet.h)
+    expect(s.w / s.h).toBeLessThanOrEqual(1.8 + 0.05)
+  })
+})
+
+describe('layoutOutfit: regla de altura primero (relaciones realistas)', () => {
+  const list = layoutOutfit([
+    item('jeans', 'bottom', 'Jeans', 0.45),
+    item('tee', 'top', 'Playera', 1.1),
+    item('shoe', 'shoes', 'Tenis', 2.2),
+  ])
+  it('los jeans llegan de la cintura (≈256) a los tobillos (≈536) y son más angostos que el máximo', () => {
+    const j = box(list, 'jeans')
+    expect(j.y).toBeCloseTo(256, 0)
+    expect(j.y + j.h).toBeGreaterThanOrEqual(535)
+    expect(j.h).toBeCloseTo(ZONES.legs.h, 0)
+    expect(j.w).toBeCloseTo(280 * 0.45, 0)
+    expect(j.x + j.w / 2).toBeCloseTo(CANVAS_W / 2)
+  })
+  it('la playera va del hombro a la cadera, ancha pero con tope de 200', () => {
+    const t = box(list, 'tee')
+    expect(t.y).toBeCloseTo(98, 0)
+    expect(t.w).toBeLessThanOrEqual(200)
+    expect(t.w / t.h).toBeCloseTo(1.1, 1)
+    // metida: se superpone ~12 con la cintura del pantalón y queda encima
+    const j = box(list, 'jeans')
+    expect(t.y + t.h - j.y).toBeCloseTo(TUCK_OVERLAP, 0)
+    expect(t.z).toBeGreaterThan(j.z)
+  })
+  it('los tenis (2.2) se limitan por altura y quedan centrados abajo', () => {
+    const s = box(list, 'shoe')
+    expect(s.h).toBeCloseTo(ZONES.feet.h, 0)
+    expect(s.w).toBeCloseTo(ZONES.feet.h * 2.2, 0)
+    expect(s.z).toBeGreaterThanOrEqual(box(list, 'jeans').z)
+  })
+  it('una chamarra (0.9) es algo más grande que una playera y se reduce de forma uniforme si se pasa del ancho', () => {
+    const jacket = box(layoutOutfit([item('c', 'outerwear', 'Chamarra', 0.9)]), 'c')
+    const tee = box(layoutOutfit([item('t', 'top', 'Playera', 0.9)]), 't')
+    expect(jacket.h).toBeGreaterThan(tee.h)
+    expect(jacket.w / jacket.h).toBeCloseTo(0.9, 1)
+    const wide = box(layoutOutfit([item('c', 'outerwear', 'Chamarra', 1.6)]), 'c')
+    expect(wide.w).toBeCloseTo(ZONES.outer.w, 0)
+    expect(wide.w / wide.h).toBeCloseTo(1.6, 1)
+  })
+  it('unos jeans muy anchos (holgados, 0.8) pueden sobresalir del cuerpo hasta ~190 sin bajar de la altura objetivo', () => {
+    const j = box(layoutOutfit([item('j', 'bottom', 'Jeans', 0.65)]), 'j')
+    expect(j.h).toBeCloseTo(ZONES.legs.h, 0)
+    expect(j.w).toBeCloseTo(280 * 0.65, 0)
+    const huge = box(layoutOutfit([item('j', 'bottom', 'Jeans', 1)]), 'j')
+    expect(huge.w).toBeCloseTo(190, 0)
+    expect(huge.h).toBeCloseTo(190, 0)
   })
 })
 

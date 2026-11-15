@@ -80,8 +80,7 @@ export function CutoutSettings() {
     remover.dispose?.()
   }
 
-  async function processPending() {
-    const queue = pending
+  async function processBatch(queue: Garment[]) {
     cancelRef.current = false
     setBatchMessage(null)
     setBatch({ done: 0, total: queue.length, cancelling: false })
@@ -187,10 +186,19 @@ export function CutoutSettings() {
         type="button"
         className="btn"
         disabled={!downloaded || batch !== null || pending.length === 0}
-        onClick={() => void processPending()}
+        onClick={() => void processBatch(pending)}
       >
         Procesar prendas sin recorte ({pending.length})
       </button>
+      <button
+        type="button"
+        className="btn"
+        disabled={!downloaded || batch !== null || withPhoto.length === 0}
+        onClick={() => void processBatch(withPhoto)}
+      >
+        Rehacer todos los recortes ({withPhoto.length})
+      </button>
+      <p className="page-hint">Útil tras una mejora de la limpieza: vuelve a recortar cada foto con el modelo. Si una falla, se conserva su recorte actual.</p>
       {batch && (
         <>
           <p className="page-hint" role="status">

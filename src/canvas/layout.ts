@@ -53,24 +53,35 @@ interface Zone extends Rect {
   anchor: Anchor
 }
 
+/**
+ * Zonas sobre la anatomía del maniquí (ver `Mannequin` en OutfitCanvas): cuello ≈ y 98, cadera ≈ y 290, tobillos ≈ y 536.
+ * `w` es el ancho máximo permitido: una prenda más ancha que el cuerpo (jeans holgados) puede sobresalir.
+ * Regla de ajuste: primero se busca la ALTURA de la zona (top: hombro→cadera, bottom: cintura→tobillo) y solo si el
+ * ancho se pasa del máximo se reduce todo de forma uniforme (`fitContain`).
+ */
 export const ZONES = {
-  torso: { x: CX - 80, y: 100, w: 160, h: 180, anchor: 'top' },
+  // Hombro → cadera; el top termina TUCK_OVERLAP unidades por debajo de la cintura del pantalón (metido).
+  torso: { x: CX - 100, y: 98, w: 200, h: 170, anchor: 'top' },
   // Con abrigo abierto: la prenda de arriba queda visible en una columna central más angosta.
-  'torso-center': { x: CX - 54, y: 112, w: 108, h: 150, anchor: 'top' },
-  outer: { x: CX - 100, y: 96, w: 200, h: 215, anchor: 'top' },
-  legs: { x: CX - 80, y: 262, w: 160, h: 284, anchor: 'top' },
-  knees: { x: CX - 80, y: 262, w: 160, h: 130, anchor: 'top' },
-  feet: { x: CX - 95, y: 536, w: 190, h: 60, anchor: 'bottom' },
-  head: { x: CX - 40, y: 12, w: 80, h: 52, anchor: 'bottom' },
-  face: { x: CX - 30, y: 44, w: 60, h: 22, anchor: 'center' },
-  neck: { x: CX - 42, y: 92, w: 84, h: 40, anchor: 'center' },
-  waist: { x: CX - 64, y: 254, w: 128, h: 22, anchor: 'center' },
+  'torso-center': { x: CX - 54, y: 110, w: 108, h: 156, anchor: 'top' },
+  outer: { x: CX - 110, y: 94, w: 220, h: 200, anchor: 'top' },
+  // Cintura → tobillo.
+  legs: { x: CX - 95, y: 256, w: 190, h: 280, anchor: 'top' },
+  knees: { x: CX - 95, y: 256, w: 190, h: 150, anchor: 'top' },
+  feet: { x: CX - 95, y: 534, w: 190, h: 62, anchor: 'bottom' },
+  head: { x: CX - 40, y: 10, w: 80, h: 50, anchor: 'bottom' },
+  face: { x: CX - 30, y: 34, w: 60, h: 22, anchor: 'center' },
+  neck: { x: CX - 42, y: 80, w: 84, h: 40, anchor: 'center' },
+  waist: { x: CX - 64, y: 250, w: 128, h: 22, anchor: 'center' },
 } satisfies Record<string, Zone>
+
+/** Cuánto se mete el top bajo la cintura del pantalón (unidades). */
+export const TUCK_OVERLAP = 12
 
 /** Muñecas: izquierda y derecha del espectador. */
 const WRIST_SLOTS: Rect[] = [
-  { x: 56, y: 268, w: 34, h: 34 },
-  { x: CANVAS_W - 56 - 34, y: 268, w: 34, h: 34 },
+  { x: 50, y: 284, w: 34, h: 34 },
+  { x: CANVAS_W - 50 - 34, y: 284, w: 34, h: 34 },
 ]
 
 /** Columnas laterales para bolsas y «otros»: derecha primero, luego izquierda; de abajo hacia arriba. */
@@ -84,9 +95,9 @@ const SIDE_SLOTS: Rect[] = [
 /** Relación ancho/alto típica cuando la imagen aún no se conoce. */
 export const DEFAULT_ASPECT: Record<Category, number> = {
   top: 1.1,
-  bottom: 0.6,
-  shoes: 2,
-  outerwear: 1,
+  bottom: 0.5,
+  shoes: 2.2,
+  outerwear: 0.95,
   accessory: 1,
 }
 
@@ -99,10 +110,14 @@ const ACCESSORY_DEFAULT_ASPECT: Record<AccessoryKind, number> = {
   side: 1,
 }
 
-/** Tamaño máximo (unidades) del mosaico enmarcado. */
-const TILE_MAX = 88
+/** El mosaico enmarcado ocupa esta fracción de la altura de su zona (y de su ancho) y se ancla dentro de ella. */
+const TILE_HEIGHT_FRACTION = 0.8
+const TILE_WIDTH_FRACTION = 0.92
+/** Relaciones extremas se acotan para que el mosaico siga pareciendo una foto. */
+const TILE_ASPECT_MIN = 0.55
+const TILE_ASPECT_MAX = 1.8
 
-const Z = { bottom: 1, shoes: 1, top: 2, outerwear: 3, waist: 6, accessory: 7, neck: 8 } as const
+const Z = { bottom: 1, shoes: 2, top: 2, outerwear: 3, waist: 6, accessory: 7, neck: 8 } as const
 
 const normalize = (s: string) =>
   s
@@ -152,15 +167,20 @@ function place(
 ): PlacedBox {
   const anchor = zone.anchor ?? 'center'
   const framed = !!item.framed
-  const rect: Rect = framed ? tileIn(zone, anchor) : fitContain(item.aspect ?? fallbackAspect, zone, anchor)
+  const aspect = item.aspect ?? fallbackAspect
+  const rect: Rect = framed ? tileIn(aspect, zone, anchor) : fitContain(aspect, zone, anchor)
   return { id: item.id, x: round(rect.x), y: round(rect.y), w: round(rect.w), h: round(rect.h), z, zone: zoneName, framed }
 }
 
-function tileIn(zone: Rect, anchor: Anchor): Rect {
-  const s = Math.min(zone.w, zone.h, TILE_MAX)
-  const x = zone.x + (zone.w - s) / 2
-  const y = anchor === 'bottom' ? zone.y + zone.h - s : zone.y + (zone.h - s) / 2
-  return { x, y, w: s, h: s }
+/** Mosaico de foto: ~80 % de la altura de la zona, con la forma de la foto (acotada), anclado dentro de la zona. */
+export function tileIn(aspect: number, zone: Rect, anchor: Anchor): Rect {
+  const a = Math.min(TILE_ASPECT_MAX, Math.max(TILE_ASPECT_MIN, Number.isFinite(aspect) && aspect > 0 ? aspect : 1))
+  const area = { x: 0, y: 0, w: zone.w * TILE_WIDTH_FRACTION, h: zone.h * TILE_HEIGHT_FRACTION }
+  const fit = fitContain(a, area, 'top')
+  const margin = zone.h * ((1 - TILE_HEIGHT_FRACTION) / 2)
+  const x = zone.x + (zone.w - fit.w) / 2
+  const y = anchor === 'top' ? zone.y + margin : anchor === 'bottom' ? zone.y + zone.h - margin - fit.h : zone.y + (zone.h - fit.h) / 2
+  return { x, y, w: fit.w, h: fit.h }
 }
 
 /** El lienzo solo tiene sentido si el outfit tiene al menos una prenda de arriba o de abajo. */
