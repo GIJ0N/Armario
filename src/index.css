@@ -428,7 +428,7 @@ button { -webkit-appearance: none; appearance: none; }
 .outfit-actions .btn-block { flex: 1; margin-top: 0; }
 .worn-note { color: var(--ok); font-weight: 600; display: inline-flex; align-items: center; gap: var(--space-1); }
 
-/* OutfitVisual: bloque intercambiable (la fase 11 lo sustituye por el maniquí). */
+/* OutfitVisual: cuadrícula de respaldo (sin prenda de arriba ni de abajo). */
 .outfit-visual { display: grid; gap: var(--space-2); grid-template-columns: repeat(2, 1fr); list-style: none; margin: 0; padding: 0; }
 .outfit-visual[data-count='1'] { grid-template-columns: 1fr; }
 .outfit-visual[data-count='3'] { grid-template-rows: repeat(2, 1fr); }
@@ -443,6 +443,53 @@ button { -webkit-appearance: none; appearance: none; }
   background: color-mix(in srgb, var(--surface) 86%, transparent); color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* Lienzo con maniquí (fase 11) */
+.outfit-canvas { display: flex; flex-direction: column; gap: var(--space-2); }
+.canvas-panel {
+  display: flex; justify-content: center; height: clamp(420px, 118vw, 480px); border-radius: var(--radius-m);
+  background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--surface) 70%, var(--surface-photo)), var(--surface-photo) 75%);
+  padding: var(--space-2) 0;
+}
+.outfit-canvas[data-size='small'] .canvas-panel { height: 300px; }
+.canvas-stage { position: relative; height: 100%; max-width: 100%; }
+.mannequin { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mannequin-body { fill: color-mix(in srgb, var(--text) 15%, var(--surface-photo)); }
+.mannequin-ground { fill: color-mix(in srgb, var(--text) 10%, transparent); }
+.canvas-garment {
+  position: absolute; display: flex; align-items: center; justify-content: center; padding: 0; margin: 0;
+  border: 0; background: transparent; cursor: pointer; color: var(--text-muted); -webkit-tap-highlight-color: transparent;
+}
+.canvas-garment:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-s); }
+.canvas-cutout {
+  width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 30%));
+}
+.canvas-tile {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  border-radius: var(--radius-m); background: var(--surface); border: 2px solid var(--surface); box-shadow: var(--shadow-m);
+}
+.canvas-tile img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
+.canvas-tile svg { width: 45%; height: 45%; opacity: 0.6; }
+.canvas-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.chip-small { min-height: 32px; padding: 4px 12px; font-size: 0.82rem; }
+
+/* Carrusel de outfits en Hoy */
+.carousel { margin: var(--space-4) 0; }
+.outfits-carousel {
+  flex-direction: row; align-items: flex-start; gap: var(--space-3); margin: 0; overflow-x: auto;
+  scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; padding-bottom: var(--space-2);
+}
+.outfits-carousel::-webkit-scrollbar { display: none; }
+.outfits-carousel > .outfit-card { flex: 0 0 100%; min-width: 0; scroll-snap-align: center; scroll-snap-stop: always; }
+.carousel-dots { display: flex; align-items: center; justify-content: center; gap: var(--space-2); margin-top: var(--space-2); }
+.carousel-dot {
+  width: 8px; height: 8px; padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--border);
+  cursor: pointer; position: relative; transition: width 0.2s var(--ease), background 0.2s var(--ease);
+}
+.carousel-dot::after { content: ''; position: absolute; inset: -18px -6px; }
+.carousel-dot[aria-current='true'] { width: 22px; background: var(--ink); }
+.carousel-count { margin-left: var(--space-2); font-size: 0.82rem; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* Calificación */
 .rating { margin-top: var(--space-3); }

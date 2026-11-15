@@ -1,6 +1,7 @@
 import { CATEGORY_LABELS, OCCASION_LABELS, OCCASIONS, type Garment, type PurchaseEvaluation } from '../db'
 import { VERDICT_LABELS } from '../purchase'
 import { GarmentPhoto } from './GarmentPhoto'
+import { OutfitVisual } from './OutfitVisual'
 
 const nameOf = (g: Garment) => g.subcategory || CATEGORY_LABELS[g.category]
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -10,17 +11,6 @@ export function VerdictBadge({ verdict, small }: { verdict: PurchaseEvaluation['
     <span className={`verdict verdict-${verdict}${small ? ' verdict-small' : ''}`} data-testid="verdict-badge">
       {VERDICT_LABELS[verdict]}
     </span>
-  )
-}
-
-function Thumb({ g, label }: { g: Garment; label?: string }) {
-  return (
-    <li className="outfit-item" title={nameOf(g)}>
-      <div className="outfit-thumb">
-        <GarmentPhoto photoPath={g.photo_path} cutoutPath={g.cutout_path} alt={nameOf(g)} />
-      </div>
-      <span>{label ?? nameOf(g)}</span>
-    </li>
   )
 }
 
@@ -107,14 +97,11 @@ export function PurchaseResult({ garment, evaluation, wardrobe, fromWishlist, bu
                 <div className="outfit-head">
                   <span className="badge badge-source">{OCCASION_LABELS[e.occasion]}</span>
                 </div>
-                <ul className="outfit-items">
-                  {e.garmentIds
-                    .map((id) => byId.get(id))
-                    .filter((g): g is Garment => !!g)
-                    .map((g) => (
-                      <Thumb key={g.id} g={g} label={g.id === garment.id ? `${nameOf(g)} (nueva)` : undefined} />
-                    ))}
-                </ul>
+                <OutfitVisual
+                  size="small"
+                  newId={garment.id}
+                  items={e.garmentIds.map((id) => byId.get(id)).filter((g): g is Garment => !!g)}
+                />
               </li>
             ))}
           </ul>
