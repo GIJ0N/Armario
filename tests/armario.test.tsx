@@ -163,7 +163,7 @@ describe('Agregar con IA', () => {
   }
 
   it('rellena el formulario con la sugerencia y permite guardar', async () => {
-    const ai = new MockAiProvider({ delayMs: 20 })
+    const ai = new MockAiProvider({ delayMs: 300 })
     renderApp('/agregar', ai)
     await pickPhoto()
     expect(await screen.findByText('Analizando la prenda…')).toBeInTheDocument()
