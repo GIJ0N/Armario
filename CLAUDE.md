@@ -41,7 +41,7 @@ SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción
 
 ## Estado
 
-Fase actual: 6 completada (incluye 5); siguiente: 7
+Fase actual: 8 completada (fases 1 a 7 terminadas; v2 en curso: 9 a 13 en el plan «Armario v2»)
 
 ## Gusto
 
