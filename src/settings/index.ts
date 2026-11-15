@@ -17,7 +17,9 @@ export interface Settings {
 }
 
 export const SETTINGS_STORAGE_KEY = 'armario.settings'
-export const DEFAULT_MODEL = 'gemini-3.8-flash'
+export const DEFAULT_MODEL = 'gemini-2.5-flash'
+/** Antiguo modelo por defecto (saturado); quien lo tiene guardado sin haberlo elegido pasa al nuevo. */
+const LEGACY_DEFAULT_MODEL = 'gemini-3.8-flash'
 
 export const DEFAULT_SETTINGS: Settings = {
   geminiApiKey: '',
@@ -56,7 +58,7 @@ export function loadSettings(): Settings {
   cacheValue = {
     geminiApiKey: typeof stored.geminiApiKey === 'string' ? stored.geminiApiKey : DEFAULT_SETTINGS.geminiApiKey,
     geminiModel:
-      typeof stored.geminiModel === 'string' && stored.geminiModel.trim()
+      typeof stored.geminiModel === 'string' && stored.geminiModel.trim() && stored.geminiModel !== LEGACY_DEFAULT_MODEL
         ? stored.geminiModel
         : DEFAULT_SETTINGS.geminiModel,
     city: typeof stored.city === 'string' && stored.city.trim() ? stored.city : DEFAULT_SETTINGS.city,

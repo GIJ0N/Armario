@@ -15,12 +15,32 @@ import { taggedGarmentSchema, type AiProvider, type GenerateJsonRequest, type Ta
 
 export const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models'
 export const DEFAULT_TIMEOUT_MS = 45_000
+/** Modelos estables a los que se recurre si el elegido está saturado o no responde. */
+export const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'] as const
+/** Espera antes del único reintento sobre el mismo modelo ante un 5xx. */
+export const RETRY_DELAY_MS = 1500
+/** Tras fallar, un modelo se prueba al final de la cola durante este tiempo. */
+export const MODEL_COOLDOWN_MS = 5 * 60_000
+
+/** Modelos que fallaron hace poco (memoria de sesión; no se guarda en disco). */
+const failedAt = new Map<string, number>()
+
+/** Solo para pruebas. */
+export function resetModelCooldowns() {
+  failedAt.clear()
+}
 
 export interface GeminiOptions {
   apiKey: string
   model: string
   temperature?: number
   timeoutMs?: number
+  /** Modelos de respaldo, en orden. Por defecto `FALLBACK_MODELS`; `[]` desactiva el respaldo. */
+  fallbackModels?: readonly string[]
+  /** Espera entre el primer intento y su reintento (ms). */
+  retryDelayMs?: number
+  /** Se llama cuando una respuesta salió de un modelo distinto al configurado. */
+  onFallback?: (usedModel: string) => void
   /** Inyectable para pruebas; por defecto el fetch global. */
   fetchImpl?: typeof fetch
 }
@@ -49,6 +69,11 @@ export class GeminiProvider implements AiProvider {
   private readonly temperature: number
   private readonly timeoutMs: number
   private readonly fetchImpl: typeof fetch
+  private readonly fallbackModels: readonly string[]
+  private readonly retryDelayMs: number
+  private readonly onFallback?: (usedModel: string) => void
+  /** Último modelo que respondió; `null` si aún no hay llamadas. */
+  lastModelUsed: string | null = null
 
   constructor(opts: GeminiOptions) {
     if (!opts.apiKey.trim()) throw new AiNotConfiguredError()
@@ -57,6 +82,9 @@ export class GeminiProvider implements AiProvider {
     this.temperature = opts.temperature ?? 0.2
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.fetchImpl = opts.fetchImpl ?? ((...a) => fetch(...a))
+    this.fallbackModels = opts.fallbackModels ?? FALLBACK_MODELS
+    this.retryDelayMs = opts.retryDelayMs ?? RETRY_DELAY_MS
+    this.onFallback = opts.onFallback
   }
 
   tagGarment(image: Blob): Promise<TaggedGarment> {
@@ -150,7 +178,50 @@ export class GeminiProvider implements AiProvider {
     }
   }
 
+  /** Orden de prueba: el elegido, luego los de respaldo; los que fallaron hace poco, al final. */
+  private modelQueue(): string[] {
+    const all = [...new Set([this.model, ...this.fallbackModels])]
+    const now = Date.now()
+    const recentlyFailed = (m: string) => now - (failedAt.get(m) ?? -Infinity) < MODEL_COOLDOWN_MS
+    return [...all.filter((m) => !recentlyFailed(m)), ...all.filter(recentlyFailed)]
+  }
+
+  /** Un fallo del modelo (no de la key ni de la red local) justifica probar otro. */
+  private static isModelFailure(e: unknown): boolean {
+    return (
+      e instanceof AiRateLimitError ||
+      e instanceof AiModelNotFoundError ||
+      (e instanceof AiNetworkError && (e.kind === 'http' || e.kind === 'timeout'))
+    )
+  }
+
   private async callOnce<T>(req: GenerateJsonRequest<T>, userText: string): Promise<string> {
+    let firstError: unknown
+    for (const model of this.modelQueue()) {
+      try {
+        let text: string
+        try {
+          text = await this.callModel(model, req, userText)
+        } catch (e) {
+          // Un 5xx suele ser momentáneo: un reintento breve antes de cambiar de modelo.
+          if (!(e instanceof AiNetworkError && e.kind === 'http')) throw e
+          await new Promise((r) => setTimeout(r, this.retryDelayMs))
+          text = await this.callModel(model, req, userText)
+        }
+        failedAt.delete(model)
+        this.lastModelUsed = model
+        if (model !== this.model) this.onFallback?.(model)
+        return text
+      } catch (e) {
+        if (!GeminiProvider.isModelFailure(e)) throw e
+        failedAt.set(model, Date.now())
+        firstError ??= e
+      }
+    }
+    throw firstError
+  }
+
+  private async callModel<T>(model: string, req: GenerateJsonRequest<T>, userText: string): Promise<string> {
     const imageParts = await Promise.all(
       (req.images ?? []).map(async (img) => ({
         inline_data: { mime_type: 'image/jpeg', data: await blobToBase64(img) },
@@ -166,13 +237,13 @@ export class GeminiProvider implements AiProvider {
       },
     }
 
-    const res = await this.request(`${GEMINI_ENDPOINT}/${encodeURIComponent(this.model)}:generateContent`, {
+    const res = await this.request(`${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
 
-    if (!res.ok) await this.throwHttpError(res)
+    if (!res.ok) await this.throwHttpError(res, model)
 
     let payload: unknown
     try {
@@ -190,7 +261,7 @@ export class GeminiProvider implements AiProvider {
     return text
   }
 
-  private async throwHttpError(res: Response): Promise<never> {
+  private async throwHttpError(res: Response, model = this.model): Promise<never> {
     let reason = ''
     let status = ''
     let message = ''
@@ -207,7 +278,7 @@ export class GeminiProvider implements AiProvider {
     if (res.status === 401 || res.status === 403 || (res.status === 400 && `${status} ${reason} ${message}`.includes('API_KEY_INVALID'))) {
       throw new AiAuthError(undefined, detail)
     }
-    if (res.status === 404) throw new AiModelNotFoundError(this.model, detail)
+    if (res.status === 404) throw new AiModelNotFoundError(model, detail)
     if (res.status >= 500) throw new AiNetworkError(`La IA no está disponible (HTTP ${res.status}).`, detail, 'http')
     throw new AiInvalidResponseError(`La IA rechazó la solicitud (HTTP ${res.status}).`, detail)
   }

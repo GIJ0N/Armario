@@ -20,6 +20,13 @@ describe('ajustes', () => {
     expect(loadSettings().geminiModel).toBe(DEFAULT_MODEL)
   })
 
+  it('el modelo antiguo por defecto guardado pasa al nuevo; uno elegido se conserva', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ geminiModel: 'gemini-3.8-flash' }))
+    expect(loadSettings().geminiModel).toBe(DEFAULT_MODEL)
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ geminiModel: 'gemini-2.5-pro' }))
+    expect(loadSettings().geminiModel).toBe('gemini-2.5-pro')
+  })
+
   it('getAiProvider exige API key', () => {
     expect(() => getAiProvider()).toThrow(AiNotConfiguredError)
     saveSettings({ geminiApiKey: 'k' })

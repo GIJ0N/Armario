@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AiAuthError,
   AiInvalidResponseError,
@@ -7,7 +7,7 @@ import {
   AiRateLimitError,
   describeAiError,
 } from '../src/ai/errors'
-import { GeminiProvider } from '../src/ai/gemini'
+import { GeminiProvider, resetModelCooldowns } from '../src/ai/gemini'
 import { DEFAULT_MOCK_GARMENT, MockAiProvider } from '../src/ai/mock'
 import { taggedGarmentSchema } from '../src/ai/provider'
 
@@ -70,7 +70,7 @@ describe('GeminiProvider', () => {
 
   it('429 -> AiRateLimitError sin reintentar', async () => {
     const f = vi.fn().mockResolvedValue(err(429))
-    await expect(make(f as unknown as typeof fetch).tagGarment(image)).rejects.toBeInstanceOf(AiRateLimitError)
+    await expect(make(f as unknown as typeof fetch, { fallbackModels: [] }).tagGarment(image)).rejects.toBeInstanceOf(AiRateLimitError)
     expect(f).toHaveBeenCalledTimes(1)
   })
 
@@ -216,5 +216,81 @@ describe('GeminiProvider: diagnóstico', () => {
     expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200')
     expect(init.method).toBe('GET')
     expect(init.headers['x-goog-api-key']).toBe('KEY123')
+  })
+})
+
+describe('GeminiProvider: respaldo de modelo', () => {
+  beforeEach(() => resetModelCooldowns())
+  const urlOf = (f: ReturnType<typeof vi.fn>, i: number) => String(f.mock.calls[i][0])
+  const unavailable = () => err(503, { error: { status: 'UNAVAILABLE', message: 'high demand' } })
+  const opts = { retryDelayMs: 0, fallbackModels: ['backup-a', 'backup-b'] }
+
+  it('reintenta el mismo modelo una vez ante un 503 y no cambia si responde', async () => {
+    const f = vi.fn().mockResolvedValueOnce(unavailable()).mockResolvedValueOnce(ok(DEFAULT_MOCK_GARMENT))
+    const onFallback = vi.fn()
+    const p = make(f as unknown as typeof fetch, { ...opts, onFallback })
+    await p.tagGarment(image)
+    expect(f).toHaveBeenCalledTimes(2)
+    expect(urlOf(f, 1)).toContain('gemini-test:')
+    expect(onFallback).not.toHaveBeenCalled()
+    expect(p.lastModelUsed).toBe('gemini-test')
+  })
+
+  it('pasa al siguiente modelo cuando el principal sigue en 503', async () => {
+    const f = vi
+      .fn()
+      .mockResolvedValueOnce(unavailable())
+      .mockResolvedValueOnce(unavailable())
+      .mockResolvedValueOnce(ok(DEFAULT_MOCK_GARMENT))
+    const onFallback = vi.fn()
+    const p = make(f as unknown as typeof fetch, { ...opts, onFallback })
+    await p.tagGarment(image)
+    expect(urlOf(f, 2)).toContain('backup-a:')
+    expect(onFallback).toHaveBeenCalledWith('backup-a')
+    expect(p.lastModelUsed).toBe('backup-a')
+  })
+
+  it('salta a otro modelo si el elegido da 404 o 429', async () => {
+    const f = vi
+      .fn()
+      .mockResolvedValueOnce(err(404, {}))
+      .mockResolvedValueOnce(err(429, {}))
+      .mockResolvedValueOnce(ok(DEFAULT_MOCK_GARMENT))
+    const p = make(f as unknown as typeof fetch, opts)
+    await p.tagGarment(image)
+    expect(urlOf(f, 2)).toContain('backup-b:')
+  })
+
+  it('no cambia de modelo por un error de la key', async () => {
+    const f = vi.fn().mockResolvedValue(err(403, { error: { status: 'PERMISSION_DENIED' } }))
+    await expect(make(f as unknown as typeof fetch, opts).tagGarment(image)).rejects.toBeInstanceOf(AiAuthError)
+    expect(f).toHaveBeenCalledTimes(1)
+  })
+
+  it('si todos fallan, lanza el primer error', async () => {
+    const f = vi.fn().mockResolvedValue(unavailable())
+    const p = make(f as unknown as typeof fetch, opts)
+    await expect(p.tagGarment(image)).rejects.toBeInstanceOf(AiNetworkError)
+    // 3 modelos × (intento + reintento)
+    expect(f).toHaveBeenCalledTimes(6)
+  })
+
+  it('un modelo que falló hace poco se prueba al final en la siguiente llamada', async () => {
+    const f = vi
+      .fn()
+      .mockResolvedValueOnce(unavailable())
+      .mockResolvedValueOnce(unavailable())
+      .mockResolvedValueOnce(ok(DEFAULT_MOCK_GARMENT))
+      .mockResolvedValueOnce(ok(DEFAULT_MOCK_GARMENT))
+    const p = make(f as unknown as typeof fetch, opts)
+    await p.tagGarment(image)
+    await p.tagGarment(image)
+    expect(urlOf(f, 3)).toContain('backup-a:')
+  })
+
+  it('con fallbackModels vacío no cambia de modelo', async () => {
+    const f = vi.fn().mockResolvedValue(unavailable())
+    await expect(make(f as unknown as typeof fetch, { ...opts, fallbackModels: [] }).tagGarment(image)).rejects.toBeInstanceOf(AiNetworkError)
+    expect(f).toHaveBeenCalledTimes(2)
   })
 })
