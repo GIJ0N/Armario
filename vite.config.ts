@@ -8,6 +8,8 @@ const base = process.env.VITE_BASE ?? '/'
 
 export default defineConfig({
   base,
+  // Recomendado por @sqlite.org/sqlite-wasm: que Vite no pre-empaquete el módulo (rompe la ruta del .wasm).
+  optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
   plugins: [
     react(),
     VitePWA({
@@ -35,7 +37,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,png,svg,webmanifest,wasm}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
     }),
   ],

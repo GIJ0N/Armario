@@ -1,0 +1,77 @@
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { GarmentForm, type GarmentFormSubmit } from '../components/GarmentForm'
+import { useRepository } from '../components/RepositoryContext'
+import type { Garment } from '../db'
+
+export default function GarmentDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  const repo = useRepository()
+  const navigate = useNavigate()
+  const [garment, setGarment] = useState<Garment | null | undefined>(undefined)
+  const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void repo.get(id ?? '').then((g) => !cancelled && setGarment(g))
+    return () => {
+      cancelled = true
+    }
+  }, [repo, id])
+
+  if (garment === undefined) return <p className="page-hint">Cargando…</p>
+  if (garment === null) {
+    return (
+      <section>
+        <h1 className="page-title">Prenda no encontrada</h1>
+        <Link to="/armario">Volver al armario</Link>
+      </section>
+    )
+  }
+
+  async function save({ data, newPhoto, removePhoto }: GarmentFormSubmit) {
+    let photo_path = data.photo_path
+    if (newPhoto) photo_path = await repo.savePhoto(newPhoto)
+    else if (removePhoto) photo_path = null
+    try {
+      await repo.update(garment!.id, { ...data, photo_path })
+    } catch (e) {
+      if (newPhoto && photo_path) await repo.deletePhoto(photo_path)
+      throw e
+    }
+    navigate('/armario')
+  }
+
+  async function remove() {
+    try {
+      await repo.delete(garment!.id)
+      navigate('/armario')
+    } catch (e) {
+      setConfirming(false)
+      setError(e instanceof Error ? e.message : 'No se pudo eliminar.')
+    }
+  }
+
+  return (
+    <section>
+      <p><Link to="/armario">← Armario</Link></p>
+      <h1 className="page-title">Editar prenda</h1>
+      <GarmentForm initial={garment} submitLabel="Guardar cambios" onSubmit={save} />
+      {error && <p role="alert" className="form-error">{error}</p>}
+      <button type="button" className="btn btn-danger btn-block" onClick={() => setConfirming(true)}>
+        Eliminar prenda
+      </button>
+      {confirming && (
+        <ConfirmDialog
+          title="¿Eliminar esta prenda?"
+          message="Se borrará la prenda y su foto. Esta acción no se puede deshacer."
+          confirmLabel="Eliminar"
+          onConfirm={() => void remove()}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
+    </section>
+  )
+}

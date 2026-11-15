@@ -29,7 +29,7 @@ La app es una web instalable (PWA): se abre una vez en Safari, se agrega a la pa
 | Capa | Elección | Por qué |
 | --- | --- | --- |
 | App | Vite + React + TypeScript + React Router, con `vite-plugin-pwa` y `display: standalone` | Se instala desde Safari y abre sin conexión |
-| Datos | SQLite en WebAssembly (`@sqlite.org/sqlite-wasm`) guardada en OPFS, con migraciones SQL | Base SQL real dentro del teléfono; confirmar en la fase 0/1 que persiste en iOS Safari y, si no, usar IndexedDB detrás de la misma interfaz |
+| Datos | SQLite en WebAssembly (`@sqlite.org/sqlite-wasm`) en memoria, con migraciones SQL; tras cada escritura se guarda la base completa como instantánea en IndexedDB y se restaura al abrir. Fotos como Blobs en IndexedDB. Todo detrás de una interfaz de repositorio | GitHub Pages no envía COOP/COEP y OPFS es irregular en iOS Safari; la instantánea persiste en cualquier navegador y el backend es reemplazable |
 | Fotos | Campo de archivo con `accept="image/*"` y `capture`, reducidas a 1024 px y guardadas en el teléfono | Abre la cámara; también acepta capturas de tiendas en línea |
 | Respaldo | Exporta un zip (base + fotos) con el menú Compartir de iOS (Web Share API) hacia Archivos o iCloud Drive; importar lo restaura | Gratis y bajo control del usuario |
 | IA | Gemini API, modelo Flash de la capa gratuita (`gemini-3.8-flash` por defecto), con salida JSON estructurada | Acepta imágenes y no cobra dentro de sus límites |

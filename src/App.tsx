@@ -4,6 +4,7 @@ import AgregarPage from './pages/Agregar'
 import AjustesPage from './pages/Ajustes'
 import ArmarioPage from './pages/Armario'
 import ComprarPage from './pages/Comprar'
+import GarmentDetailPage from './pages/GarmentDetail'
 import HoyPage from './pages/Hoy'
 import UsoPage from './pages/Uso'
 
@@ -14,6 +15,7 @@ export default function App() {
         <Routes>
           <Route index element={<HoyPage />} />
           <Route path="armario" element={<ArmarioPage />} />
+          <Route path="armario/:id" element={<GarmentDetailPage />} />
           <Route path="agregar" element={<AgregarPage />} />
           <Route path="comprar" element={<ComprarPage />} />
           <Route path="uso" element={<UsoPage />} />
