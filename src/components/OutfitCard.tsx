@@ -4,7 +4,17 @@ import { GarmentPhoto } from './GarmentPhoto'
 
 const SOURCE_LABELS = { ia: 'IA', reglas: 'reglas' } as const
 
-export function OutfitCard({ outfit, garments }: { outfit: SuggestedOutfit; garments: Map<string, Garment> }) {
+interface OutfitCardProps {
+  outfit: SuggestedOutfit
+  garments: Map<string, Garment>
+  /** Si se omite, la tarjeta no muestra «Me lo pongo». */
+  onWear?: () => void
+  onUndo?: () => void
+  worn?: boolean
+  busy?: boolean
+}
+
+export function OutfitCard({ outfit, garments, onWear, onUndo, worn = false, busy = false }: OutfitCardProps) {
   const items = outfit.garmentIds.map((id) => garments.get(id)).filter((g): g is Garment => !!g)
   return (
     <li className="outfit-card" data-testid="outfit-card">
@@ -27,8 +37,24 @@ export function OutfitCard({ outfit, garments }: { outfit: SuggestedOutfit; garm
         })}
       </ul>
       <p className="outfit-reasoning">{outfit.reasoning}</p>
-      {/* Fase 4/5: aquí van «Me lo pongo» y me gusta / no me gusta. */}
-      <div className="outfit-actions" />
+      {/* Fase 5: aquí irán también me gusta / no me gusta. */}
+      <div className="outfit-actions">
+        {onWear &&
+          (worn ? (
+            <>
+              <span className="worn-note" data-testid="worn-note">
+                Puesto hoy ✓
+              </span>
+              <button type="button" className="btn btn-quiet btn-inline" disabled={busy} onClick={onUndo}>
+                Deshacer
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={onWear}>
+              Me lo pongo
+            </button>
+          ))}
+      </div>
     </li>
   )
 }

@@ -1,7 +1,8 @@
 import { SqliteGarmentRepository, type Repository } from './repository'
 import { IndexedDbStorage } from './storage'
 
-export type { GarmentRepository, OutfitRepository, Repository } from './repository'
+export type { GarmentRepository, OutfitRepository, Repository, Wear, WearEntry, WearRepository } from './repository'
+export * from './wearStats'
 export type { Storage } from './storage'
 export * from './types'
 export * from './labels'

@@ -37,8 +37,9 @@ export interface EngineContext {
   occasion: Occasion
   weather: Weather
   garments: Garment[]
-  /** Vacío hasta la fase 4. */
+  /** Usos reales (últimos ~60 días) para el puntaje de rotación. */
   wears: WearRecord[]
+  /** Outfits USADOS (no solo sugeridos) en los últimos 14 días, más los ya mostrados en esta sesión. */
   recentOutfits: RecentOutfit[]
   /** YYYY-MM-DD (fecha local). */
   today: string
