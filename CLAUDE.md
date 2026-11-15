@@ -35,9 +35,13 @@ SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción
 - Las pruebas usan `MockAiProvider` (`src/ai/mock.ts`) inyectado con `AiProviderContextProvider`; ninguna prueba toca la red.
 - Los ajustes (API key, modelo, ciudad) están en `localStorage` (`src/settings/`), nunca en SQLite, para que los respaldos no incluyan la key.
 
+## Respaldo
+
+`src/db/backup.ts`: `createBackup` arma un zip (`armario.sqlite`, `photos/<key>.jpg`, `manifest.json` con app/format/schemaVersion) y `importBackup` lo valida (app, formato, `schemaVersion` <= migraciones) y, antes de reemplazar, guarda la base actual con `saveBackupSnapshot('pre-restore-…')`; luego reemplaza base y fotos en una sola transacción y la UI recarga. Nunca incluye `localStorage` (ajustes / API key). El estado de avisos (último respaldo, aplazar, Safari) vive en `src/lib/backupState.ts`; los avisos del shell en `src/components/ShellBanners.tsx`. El service worker precachea todo (wasm incluido) para abrir sin conexión.
+
 ## Estado
 
-Fase actual: 5 completada; siguiente: 6
+Fase actual: 6 completada (incluye 5); siguiente: 7
 
 ## Gusto
 

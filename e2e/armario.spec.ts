@@ -156,3 +156,80 @@ test('Hoy: sin API key sugiere un outfit por reglas con el clima simulado', asyn
   await expect(page.getByTestId('outfit-card')).toHaveCount(0)
   expect(geminiCalls).toBe(0)
 })
+
+async function addGarment(page: import('@playwright/test').Page, name: string) {
+  await page.goto('./#/agregar')
+  await page.getByLabel('Categoría *').selectOption('top')
+  await page.getByLabel('Subcategoría').fill(name)
+  await page.getByLabel('Formalidad *').selectOption('3')
+  await page.getByLabel('Abrigo *').selectOption('2')
+  await page.getByRole('button', { name: 'Guardar prenda' }).click()
+  await expect(page.getByText(name)).toBeVisible()
+}
+
+test('respaldo: exportar, borrar la prenda y restaurar con el zip descargado', async ({ page }) => {
+  await addGarment(page, 'Camisa respaldo')
+  // Con prendas y sin respaldo previo aparece el recordatorio semanal.
+  await expect(page.getByText('Haz tu respaldo semanal')).toBeVisible()
+
+  await page.goto('./#/ajustes')
+  await expect(page.getByTestId('last-backup')).toContainText('Nunca')
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Exportar respaldo' }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toMatch(/^armario-respaldo-\d{4}-\d{2}-\d{2}\.zip$/)
+  const zipPath = join(mkdtempSync(join(tmpdir(), 'armario-e2e-')), 'respaldo.zip')
+  await download.saveAs(zipPath)
+  await expect(page.getByTestId('last-backup')).toContainText('hoy')
+
+  // Borrar la prenda.
+  await page.goto('./#/armario')
+  await page.getByRole('link', { name: /Editar Camisa respaldo/ }).click()
+  await page.getByRole('button', { name: 'Eliminar prenda' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Eliminar' }).click()
+  await expect(page.getByText('No hay prendas')).toBeVisible()
+
+  // Restaurar.
+  await page.goto('./#/ajustes')
+  await page.getByTestId('restore-input').setInputFiles(zipPath)
+  await expect(page.getByRole('alertdialog')).toContainText('Esto reemplaza tu armario actual')
+  await Promise.all([
+    page.waitForEvent('load'),
+    page.getByRole('alertdialog').getByRole('button', { name: 'Restaurar' }).click(),
+  ])
+  await page.goto('./#/armario')
+  await expect(page.getByText('Camisa respaldo')).toBeVisible()
+  await expect(page.getByTestId('count')).toHaveText('1 prenda')
+})
+
+test('sin conexión: la app instalada abre con su armario', async ({ page, context }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await addGarment(page, 'Camisa offline')
+  // Espera a que el service worker controle la página (precache listo).
+  await page.evaluate(async () => {
+    const reg = await navigator.serviceWorker.ready
+    if (!navigator.serviceWorker.controller) {
+      await new Promise<void>((resolve) => {
+        navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true })
+        void reg.active
+        setTimeout(resolve, 5000)
+      })
+    }
+  })
+  await page.reload()
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true)
+
+  await context.setOffline(true)
+  await page.reload()
+  await expect(page.getByRole('navigation', { name: 'Navegación principal' })).toBeVisible()
+  await expect(page.getByText('Sin conexión')).toBeVisible()
+  await page.goto('./#/armario')
+  await expect(page.getByText('Camisa offline')).toBeVisible()
+  await expect(page.getByTestId('count')).toHaveText('1 prenda')
+  // Hoy sin red: sin errores sin capturar.
+  await page.goto('./#/')
+  await expect(page.getByRole('heading', { level: 1, name: 'Hoy' })).toBeVisible()
+  expect(errors).toEqual([])
+  await context.setOffline(false)
+})

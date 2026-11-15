@@ -9,6 +9,10 @@ export interface Storage {
   putPhoto(key: string, blob: Blob): Promise<void>
   getPhoto(key: string): Promise<Blob | null>
   deletePhoto(key: string): Promise<void>
+  /** Todas las fotos guardadas (para el respaldo). */
+  listPhotos(): Promise<{ key: string; blob: Blob }[]>
+  /** Reemplaza en una sola transacción la instantánea y todas las fotos (restaurar respaldo). */
+  replaceAll(snapshot: Uint8Array, photos: { key: string; blob: Blob }[]): Promise<void>
   close(): void
 }
 
@@ -53,6 +57,24 @@ export class IndexedDbStorage implements Storage {
 
   async deletePhoto(key: string) {
     await (await this.dbPromise).delete('photos', key)
+  }
+
+  async listPhotos() {
+    const db = await this.dbPromise
+    const tx = db.transaction('photos')
+    const [keys, blobs] = await Promise.all([tx.store.getAllKeys(), tx.store.getAll()])
+    await tx.done
+    return keys.map((key, i) => ({ key: String(key), blob: blobs[i] }))
+  }
+
+  async replaceAll(snapshot: Uint8Array, photos: { key: string; blob: Blob }[]) {
+    const db = await this.dbPromise
+    const tx = db.transaction(['snapshot', 'photos'], 'readwrite')
+    const done = tx.done
+    await tx.objectStore('photos').clear()
+    for (const p of photos) await tx.objectStore('photos').put(p.blob, p.key)
+    await tx.objectStore('snapshot').put(snapshot, SNAPSHOT_KEY)
+    await done
   }
 
   close() {
