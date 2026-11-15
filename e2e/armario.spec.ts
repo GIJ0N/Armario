@@ -428,6 +428,8 @@ test('lienzo ajustable: «Ajustar» en Hoy agranda una prenda del outfit guardad
   await card.getByRole('button', { name: 'Aumentar tamaño' }).click()
   await card.getByRole('button', { name: 'Listo' }).click()
   await expect(polo).toHaveAttribute('data-scale', '1.05')
+  // El aviso aparece cuando el ajuste ya se escribió en la base.
+  await expect(page.getByText('Ajuste guardado')).toBeVisible()
 
   await page.reload()
   await page.getByRole('link', { name: 'Armario' }).click()

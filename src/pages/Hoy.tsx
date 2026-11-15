@@ -326,6 +326,8 @@ export default function HoyPage() {
     try {
       if (o.outfitId) await repo.outfits.setCanvasLayout(o.outfitId, change.layout)
       for (const id of garmentIds) await repo.setCanvasAdjust(id, change.garments[id])
+      // El aviso sale cuando ya quedó guardado (no antes), para no perder el ajuste si se cierra la app enseguida.
+      if (o.outfitId || garmentIds.length > 0) toast('Ajuste guardado')
     } catch {
       setError('No se pudo guardar el ajuste del lienzo.')
     }
