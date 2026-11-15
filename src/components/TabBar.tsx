@@ -2,14 +2,17 @@ import { CalendarCheck2, ShoppingBag, Shirt, Plus, UserRound } from 'lucide-reac
 import { NavLink, useLocation } from 'react-router-dom'
 
 const ME_PATHS = ['/yo', '/uso', '/ajustes']
+/** Rutas que cuelgan de Hoy (la pestaña Hoy sigue activa). */
+const TODAY_PATHS = ['/calendario']
 
 export function TabBar() {
   const { pathname } = useLocation()
   const meActive = ME_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+  const todayActive = pathname === '/' || TODAY_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))
   const cls = ({ isActive }: { isActive: boolean }) => (isActive ? 'tab-link active' : 'tab-link')
   return (
     <nav className="tab-bar" aria-label="Navegación principal">
-      <NavLink to="/" end className={cls}>
+      <NavLink to="/" end className={() => (todayActive ? 'tab-link active' : 'tab-link')} aria-current={todayActive ? 'page' : undefined}>
         <CalendarCheck2 className="icon" size={24} strokeWidth={1.9} aria-hidden="true" />
         <span>Hoy</span>
       </NavLink>

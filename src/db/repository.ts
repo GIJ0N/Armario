@@ -21,6 +21,8 @@ import {
   type Outfit,
   type OutfitInput,
   type OutfitSwap,
+  type PlanEntry,
+  type PlannedOutfit,
   type SavedOutfit,
   type Rating,
   type TasteProfile,
@@ -100,12 +102,30 @@ export interface WearRepository {
   create(outfitId: string, date: string): Promise<Wear>
   /** Usos con fecha desde hace `days` días (inclusive) hasta hoy y después, del más reciente al más antiguo. */
   listSince(days: number, now?: Date): Promise<WearEntry[]>
+  /** Fase 13b: usos con fecha entre `from` y `to` (ambas inclusive, YYYY-MM-DD), del más antiguo al más reciente. */
+  listBetween(from: string, to: string): Promise<WearEntry[]>
   /** Historial completo, del más reciente al más antiguo (máx. `limit`). */
   listHistory(limit?: number): Promise<WearEntry[]>
   /** Deshace «Me lo pongo». */
   deleteForOutfitOnDate(outfitId: string, date: string): Promise<void>
   /** Usos por prenda y % del armario activo usado en los últimos 30 días. */
   stats(now?: Date): Promise<WearStats>
+}
+
+/** Fase 13b: outfits planeados por fecha (calendario). Un plan nunca se borra solo; solo `remove`, `convertToWear` o borrar el outfit. */
+export interface PlanRepository {
+  /** Planea el outfit para `date`. Idempotente: no duplica (outfit, fecha); si ya existe actualiza la ocasión si se indica. */
+  create(outfitId: string, date: string, occasion?: Occasion | null): Promise<PlannedOutfit>
+  /** Planes entre `from` y `to` (inclusive), por fecha y orden de creación. */
+  listBetween(from: string, to: string): Promise<PlanEntry[]>
+  /** Planes de un outfit (todas sus fechas). */
+  listForOutfit(outfitId: string): Promise<PlannedOutfit[]>
+  /** Quita el plan (no toca el outfit). */
+  remove(id: string): Promise<void>
+  /** «Me lo puse»: en una sola transacción crea el uso en la fecha del plan (si no existe) y borra el plan. Solo hoy o fechas pasadas. */
+  convertToWear(id: string): Promise<Wear>
+  /** Apunta el plan a otra fila de outfit (cuando editar un outfit con historial crea una fila nueva). */
+  setOutfit(id: string, outfitId: string): Promise<PlannedOutfit>
 }
 
 /** Calificaciones de outfits (fase 5): una por outfit. */
@@ -146,6 +166,7 @@ export interface Repository extends GarmentRepository {
   readonly taste: TasteProfileRepository
   readonly purchases: PurchaseEvaluationRepository
   readonly swaps: SwapRepository
+  readonly plans: PlanRepository
 }
 
 type Row = Record<string, unknown>
@@ -202,6 +223,16 @@ function rowToWearEntry(row: Row): WearEntry {
   }
 }
 
+function rowToPlanned(row: Row): PlannedOutfit {
+  return {
+    id: row.pid as string,
+    outfitId: row.outfit_id as string,
+    date: row.date as string,
+    occasion: (row.plan_occasion as Occasion | null) ?? null,
+    createdAt: row.plan_created_at as string,
+  }
+}
+
 function rowToFeedback(row: Row): FeedbackEntry {
   return {
     id: row.id as string,
@@ -247,6 +278,9 @@ function rowToEvaluation(row: Row): PurchaseEvaluation {
 
 const FEEDBACK_SELECT = `SELECT f.id, f.outfit_id, f.rating, f.tags, f.comment, f.created_at,
   o.garment_ids, o.occasion, o.reasoning FROM feedback f JOIN outfits o ON o.id = f.outfit_id`
+
+const PLAN_SELECT = `SELECT p.id AS pid, p.outfit_id, p.date, p.occasion AS plan_occasion, p.created_at AS plan_created_at,
+  o.garment_ids, o.occasion, o.reasoning FROM planned_outfits p JOIN outfits o ON o.id = p.outfit_id`
 
 const WEAR_SELECT = `SELECT w.id AS wid, w.outfit_id, w.date, o.garment_ids, o.occasion, o.reasoning
   FROM wears w JOIN outfits o ON o.id = w.outfit_id`
@@ -296,6 +330,10 @@ export class SqliteGarmentRepository implements Repository {
           addDays(localDateString(now), -days),
         ])
         .map(rowToWearEntry),
+    listBetween: async (from, to) =>
+      this.db
+        .selectObjects(`${WEAR_SELECT} WHERE w.date >= ? AND w.date <= ? ORDER BY w.date ASC, w.rowid ASC`, [from, to])
+        .map(rowToWearEntry),
     listHistory: async (limit = 200) =>
       this.db
         .selectObjects(`${WEAR_SELECT} ORDER BY w.date DESC, w.rowid DESC LIMIT ?`, [limit])
@@ -313,6 +351,32 @@ export class SqliteGarmentRepository implements Repository {
       const wears = this.db.selectObjects(`${WEAR_SELECT}`).map(rowToWearEntry)
       return computeWearStats(garments, wears, localDateString(now))
     },
+  }
+
+  readonly plans: PlanRepository = {
+    create: (outfitId, date, occasion) => this.createPlan(outfitId, date, occasion ?? null),
+    listBetween: async (from, to) =>
+      this.db
+        .selectObjects(`${PLAN_SELECT} WHERE p.date >= ? AND p.date <= ? ORDER BY p.date ASC, p.rowid ASC`, [from, to])
+        .map(
+          (row): PlanEntry => ({
+            ...rowToPlanned(row),
+            garmentIds: JSON.parse(row.garment_ids as string),
+            outfitOccasion: row.occasion as Occasion,
+            reasoning: row.reasoning as string,
+          }),
+        ),
+    listForOutfit: async (outfitId) =>
+      this.db
+        .selectObjects(`${PLAN_SELECT} WHERE p.outfit_id = ? ORDER BY p.date ASC`, [outfitId])
+        .map(rowToPlanned),
+    remove: async (id) => {
+      await this.write(() => {
+        this.db.exec({ sql: 'DELETE FROM planned_outfits WHERE id = ?', bind: [id] })
+      })
+    },
+    convertToWear: (id) => this.convertPlanToWear(id),
+    setOutfit: (id, outfitId) => this.setPlanOutfit(id, outfitId),
   }
 
   readonly feedback: FeedbackRepository = {
@@ -661,6 +725,70 @@ export class SqliteGarmentRepository implements Repository {
       this.db.exec({ sql: 'INSERT INTO wears (id, outfit_id, date) VALUES (?,?,?)', bind: [id, outfitId, date] })
       return { id, outfit_id: outfitId, date }
     })
+  }
+
+  private selectPlan(id: string): PlannedOutfit | null {
+    const rows = this.db.selectObjects(`${PLAN_SELECT} WHERE p.id = ?`, [id])
+    return rows.length ? rowToPlanned(rows[0]) : null
+  }
+
+  private async createPlan(outfitId: string, date: string, occasion: Occasion | null): Promise<PlannedOutfit> {
+    if (!DATE_RE.test(date)) throw new Error('Fecha inválida (se espera AAAA-MM-DD)')
+    const id = await this.write(() => {
+      if (this.db.selectValue('SELECT 1 FROM outfits WHERE id = ?', [outfitId]) === undefined) {
+        throw new Error('Outfit no encontrado')
+      }
+      const existing = this.db.selectValue('SELECT id FROM planned_outfits WHERE outfit_id = ? AND date = ?', [outfitId, date])
+      if (existing !== undefined) {
+        if (occasion) this.db.exec({ sql: 'UPDATE planned_outfits SET occasion = ? WHERE id = ?', bind: [occasion, existing as string] })
+        return existing as string
+      }
+      const newId = crypto.randomUUID()
+      this.db.exec({
+        sql: 'INSERT INTO planned_outfits (id, outfit_id, date, occasion, created_at) VALUES (?,?,?,?,?)',
+        bind: [newId, outfitId, date, occasion, new Date().toISOString()],
+      })
+      return newId
+    })
+    return this.selectPlan(id)!
+  }
+
+  private async convertPlanToWear(id: string): Promise<Wear> {
+    return this.write(() => {
+      const rows = this.db.selectObjects('SELECT outfit_id, date FROM planned_outfits WHERE id = ?', [id])
+      if (!rows.length) throw new Error('Plan no encontrado')
+      const outfitId = rows[0].outfit_id as string
+      const date = rows[0].date as string
+      if (date > localDateString()) throw new Error('Un día futuro todavía no se puede marcar como usado')
+      const existing = this.db.selectObjects('SELECT id FROM wears WHERE outfit_id = ? AND date = ?', [outfitId, date])
+      let wearId: string
+      if (existing.length) wearId = existing[0].id as string
+      else {
+        wearId = crypto.randomUUID()
+        this.db.exec({ sql: 'INSERT INTO wears (id, outfit_id, date) VALUES (?,?,?)', bind: [wearId, outfitId, date] })
+      }
+      this.db.exec({ sql: 'DELETE FROM planned_outfits WHERE id = ?', bind: [id] })
+      return { id: wearId, outfit_id: outfitId, date }
+    })
+  }
+
+  private async setPlanOutfit(id: string, outfitId: string): Promise<PlannedOutfit> {
+    await this.write(() => {
+      const rows = this.db.selectObjects('SELECT date FROM planned_outfits WHERE id = ?', [id])
+      if (!rows.length) throw new Error('Plan no encontrado')
+      if (this.db.selectValue('SELECT 1 FROM outfits WHERE id = ?', [outfitId]) === undefined) {
+        throw new Error('Outfit no encontrado')
+      }
+      // Si el outfit nuevo ya está planeado ese día, el plan viejo sobra.
+      const clash = this.db.selectValue('SELECT id FROM planned_outfits WHERE outfit_id = ? AND date = ? AND id <> ?', [
+        outfitId,
+        rows[0].date as string,
+        id,
+      ])
+      if (clash !== undefined) this.db.exec({ sql: 'DELETE FROM planned_outfits WHERE id = ?', bind: [id] })
+      else this.db.exec({ sql: 'UPDATE planned_outfits SET outfit_id = ? WHERE id = ?', bind: [outfitId, id] })
+    })
+    return this.selectPlan(id) ?? this.db.selectObjects(`${PLAN_SELECT} WHERE p.outfit_id = ? LIMIT 1`, [outfitId]).map(rowToPlanned)[0]
   }
 
   private async rate(

@@ -34,6 +34,10 @@ export interface EditParams {
   baseIds: string[]
   next: { garmentIds: string[]; occasion: Occasion; weather: Weather | null; reasoning?: string }
   categoryOf: (id: string) => string | undefined
+  /** Fase 13b: plan del calendario que se está editando; si se crea una fila nueva, el plan se mueve a ella. */
+  planId?: string
+  /** Fase 13b: fecha de un uso (calendario) que se está editando; si se crea una fila nueva, el uso se mueve a ella. */
+  wearDate?: string
 }
 
 export interface EditResult {
@@ -47,15 +51,18 @@ export interface EditResult {
  * referencian `outfit_id` y deben seguir describiendo lo que se calificó o se usó): se crea una fila nueva con
  * source 'manual' y, si la original estaba guardada, el guardado (y su nombre) pasan a la nueva. Si no tiene
  * historial se actualiza en su lugar (también pasa a 'manual'). Siempre se registran los cambios como señal de gusto.
+ * Con `planId` / `wearDate` (calendario) y una fila nueva, ese plan o ese uso se mueve a la fila nueva.
  */
 export async function commitOutfitEdit(repo: Repository, params: EditParams): Promise<EditResult> {
-  const { original, baseIds, next, categoryOf } = params
+  const { original, baseIds, next, categoryOf, planId, wearDate } = params
   const reasoning = next.reasoning ?? (baseIds.length ? EDITED_REASONING : MANUAL_REASONING)
   // Ajustes de lienzo que se conservan: solo los de prendas que siguen en el outfit.
   const carried = pruneLayout(original?.canvas_layout, next.garmentIds)
   let outfit: Outfit
   let createdNew: boolean
-  if (original && !(await repo.outfits.hasHistory(original.id))) {
+  // Un outfit planeado también para otras fechas tampoco se reescribe: cambiaría los demás días.
+  const sharedPlan = !!original && !!planId && (await repo.plans.listForOutfit(original.id)).some((p) => p.id !== planId)
+  if (original && !sharedPlan && !(await repo.outfits.hasHistory(original.id))) {
     outfit = await repo.outfits.updateItems(original.id, { garmentIds: next.garmentIds, reasoning, occasion: next.occasion })
     createdNew = false
     // Los ajustes de lienzo de prendas que ya no están se descartan.
@@ -74,6 +81,14 @@ export async function commitOutfitEdit(repo: Repository, params: EditParams): Pr
     if (original?.saved_at) {
       outfit = await repo.outfits.save(outfit.id, original.name ?? undefined)
       await repo.outfits.unsave(original.id)
+    }
+  }
+  if (createdNew && original) {
+    // El plan (o el uso) del día editado pasa a la fila nueva; el resto de la historia queda con la original.
+    if (planId) await repo.plans.setOutfit(planId, outfit.id)
+    if (wearDate) {
+      await repo.wears.deleteForOutfitOnDate(original.id, wearDate)
+      await repo.wears.create(outfit.id, wearDate)
     }
   }
   const swaps = diffSwaps(baseIds, next.garmentIds, categoryOf)

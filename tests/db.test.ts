@@ -20,7 +20,7 @@ beforeEach(() => {
 })
 
 describe('migraciones', () => {
-  it('crea las siete tablas y fija user_version', async () => {
+  it('crea las ocho tablas y fija user_version', async () => {
     const sqlite3 = await getSqliteStatic()
     const db = new sqlite3.oo1.DB(':memory:', 'c')
     expect(runMigrations(db)).toBe(true)
@@ -28,9 +28,9 @@ describe('migraciones', () => {
       .selectValues("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .map(String)
     expect(tables).toEqual(
-      ['feedback', 'garments', 'outfit_swaps', 'outfits', 'purchase_evaluations', 'taste_profile', 'wears'].sort(),
+      ['feedback', 'garments', 'outfit_swaps', 'outfits', 'planned_outfits', 'purchase_evaluations', 'taste_profile', 'wears'].sort(),
     )
-    expect(Number(db.selectValue('PRAGMA user_version'))).toBe(7)
+    expect(Number(db.selectValue('PRAGMA user_version'))).toBe(8)
     expect(runMigrations(db)).toBe(false)
     db.close()
   })

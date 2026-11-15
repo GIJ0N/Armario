@@ -445,3 +445,114 @@ test('lienzo ajustable: «Ajustar» en Hoy agranda una prenda del outfit guardad
   await page.reload()
   await expect(page.getByLabel('Tamaño de la prenda en el maniquí')).toHaveValue('130')
 })
+
+/** Fecha local AAAA-MM-DD de hoy más `delta` días (el navegador de la prueba usa la misma zona que Node). */
+function localDate(delta = 0): string {
+  const d = new Date()
+  d.setDate(d.getDate() + delta)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+test('calendario: planear un outfit guardado para mañana, recargar y registrar un uso de ayer', async ({ page }) => {
+  await page.route('**/geocoding-api.open-meteo.com/**', (route) =>
+    route.fulfill({ json: { results: [{ name: 'Monterrey', latitude: 25.67, longitude: -100.31 }] } }),
+  )
+  await page.route('**/api.open-meteo.com/**', (route) => {
+    const days = Array.from({ length: 7 }, (_, i) => localDate(i))
+    return route.fulfill({
+      json: {
+        current: { temperature_2m: 22, apparent_temperature: 22, precipitation: 0, weather_code: 1 },
+        daily: {
+          time: days,
+          temperature_2m_max: days.map(() => 26),
+          temperature_2m_min: days.map(() => 17),
+          precipitation_probability_max: days.map(() => 10),
+        },
+      },
+    })
+  })
+  for (const [category, name] of [
+    ['top', 'Polo calendario'],
+    ['bottom', 'Chinos calendario'],
+    ['shoes', 'Mocasines calendario'],
+  ] as const) {
+    await page.goto('./#/agregar')
+    await page.getByLabel('Categoría *').selectOption(category)
+    await page.getByLabel('Subcategoría').fill(name)
+    await page.getByLabel('Formalidad *').selectOption('3')
+    await page.getByLabel('Abrigo *').selectOption('2')
+    await page.getByRole('button', { name: 'Guardar prenda' }).click()
+    await expect(page.getByText(name)).toBeVisible()
+  }
+
+  // Un outfit guardado con nombre (desde Hoy).
+  await page.goto('./#/')
+  await expect(page.getByTestId('weather-card')).toContainText('22°')
+  await page.getByRole('button', { name: 'Sugerir outfits' }).click()
+  const card = page.getByTestId('outfit-card').first()
+  await expect(card).toBeVisible()
+  await card.getByRole('button', { name: 'Guardar outfit' }).click()
+  const saveDialog = page.getByRole('dialog', { name: 'Guardar outfit' })
+  await saveDialog.getByLabel('Nombre (opcional)').fill('Look calendario')
+  await saveDialog.getByRole('button', { name: 'Guardar' }).click()
+  // El aviso sale después de esperar la escritura en la base.
+  await expect(page.getByText('Outfit guardado en Armario › Outfits')).toBeVisible()
+  await expect(card.getByRole('button', { name: 'Quitar de guardados' })).toBeVisible()
+
+  // Calendario desde el botón de Hoy; la pestaña Hoy sigue activa.
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Calendario' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Navegación principal' }).getByRole('link', { name: 'Hoy' })).toHaveClass(/active/)
+
+  const month = (date: string) => date.slice(0, 7)
+  /** Abre el día en la cuadrícula, cambiando de mes si hace falta (mañana o ayer pueden caer en otro mes). */
+  async function openDay(date: string) {
+    const cellFor = page.locator(`.cal-cell[data-date="${date}"]`)
+    if (month(date) < month(localDate())) await page.getByRole('button', { name: 'Mes anterior' }).click()
+    if (month(date) > month(localDate())) await page.getByRole('button', { name: 'Mes siguiente' }).click()
+    await expect(cellFor).toBeVisible()
+    await cellFor.click()
+  }
+  async function addSaved(toastText: string) {
+    await page.getByRole('button', { name: 'Agregar outfit' }).click()
+    await page.getByRole('button', { name: 'Elegir de mis guardados' }).click()
+    await expect(page.getByTestId('pick-saved')).toContainText('Look calendario')
+    await page.getByTestId('pick-saved').getByRole('button', { name: 'Elegir' }).click()
+    // El aviso confirma que la escritura ya terminó: solo entonces se recarga.
+    await expect(page.getByText(toastText)).toBeVisible()
+  }
+
+  // Planear mañana.
+  const tomorrow = localDate(1)
+  await openDay(tomorrow)
+  await addSaved('Outfit planeado')
+  await page.getByRole('dialog').getByRole('button', { name: 'Cerrar' }).click()
+  await expect(page.locator(`.cal-cell[data-date="${tomorrow}"]`)).toHaveAttribute('data-state', 'planned')
+
+  // Sigue planeado tras recargar la página.
+  await page.reload()
+  await expect(page.getByRole('heading', { level: 1, name: 'Calendario' })).toBeVisible()
+  const showTomorrow = async () => {
+    if (month(tomorrow) > month(localDate())) await page.getByRole('button', { name: 'Mes siguiente' }).click()
+    return page.locator(`.cal-cell[data-date="${tomorrow}"]`)
+  }
+  await expect(await showTomorrow()).toHaveAttribute('data-state', 'planned')
+  await expect(await showTomorrow()).toHaveAccessibleName(/1 planeado/)
+
+  // Registrar un uso de ayer («se me olvidó marcarlo»).
+  if (month(tomorrow) > month(localDate())) await page.getByRole('button', { name: 'Mes anterior' }).click()
+  const yesterday = localDate(-1)
+  await openDay(yesterday)
+  await addSaved('Uso registrado en el calendario')
+  await page.getByRole('dialog').getByRole('button', { name: 'Cerrar' }).click()
+  await expect(page.locator(`.cal-cell[data-date="${yesterday}"]`)).toHaveAttribute('data-state', 'worn')
+  await expect(page.locator(`.cal-cell[data-date="${yesterday}"]`)).toHaveAccessibleName(/1 outfit usado/)
+
+  // También sobrevive a otra recarga, y Uso lo cuenta.
+  await page.reload()
+  await expect(page.locator(`.cal-cell[data-date="${yesterday}"]`)).toHaveAttribute('data-state', 'worn')
+  await page.goto('./#/uso')
+  await expect(page.getByTestId('month-days')).toBeVisible()
+  await expect(page.getByTestId('history-entry')).toHaveCount(1)
+})

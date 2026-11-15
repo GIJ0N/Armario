@@ -92,6 +92,26 @@ export interface SavedOutfit {
   lastWorn: string | null
 }
 
+/** Fase 13b: un outfit planeado para una fecha futura (o aún no usado). */
+export interface PlannedOutfit {
+  id: string
+  outfitId: string
+  /** YYYY-MM-DD (fecha local) */
+  date: string
+  /** Ocasión con la que se planeó; null si no se indicó. */
+  occasion: Occasion | null
+  /** ISO */
+  createdAt: string
+}
+
+/** Un plan con los datos del outfit (unión planned_outfits + outfits). */
+export interface PlanEntry extends PlannedOutfit {
+  garmentIds: string[]
+  /** Ocasión del outfit (la del plan, si existe, está en `occasion`). */
+  outfitOccasion: Occasion
+  reasoning: string
+}
+
 /** Cambio manual de una prenda de un outfit (señal ligera de gusto). */
 export interface OutfitSwap {
   id: string

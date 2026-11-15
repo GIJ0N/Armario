@@ -1,7 +1,7 @@
 import { FORMALITY_LABELS, OCCASION_LABELS } from '../db/labels'
 import type { Garment } from '../db/types'
 import { OCCASION_RULES } from './occasions'
-import { canHaveFavorite, favoriteAccessoriesFor, forEachBaseCombo, hasAvoidedPair, spreadOf, type Plan } from './plan'
+import { canHaveFavorite, favoriteAccessoriesFor, forEachBaseCombo, hasAvoidedPair, plannedPenalty, spreadOf, type Plan } from './plan'
 import type { OutfitSuggestion } from './types'
 import { validateOutfit } from './validate'
 
@@ -62,6 +62,8 @@ export function scoreCombo(plan: Plan, items: Garment[], rankOf: Map<string, num
   if (!OCCASION_RULES[plan.ctx.occasion].relaxSilhouette && top.fit === bottom.fit && top.fit !== 'regular') score -= 4
   if (plan.filter.outerwearAdvice === 'recommended' && items.some((g) => g.category === 'outerwear')) score += 6
   score += tasteScore(plan, items)
+  // Fase 13b: prendas ya planeadas en días cercanos (penalización blanda y acotada).
+  score -= plannedPenalty(plan, items)
   return score
 }
 

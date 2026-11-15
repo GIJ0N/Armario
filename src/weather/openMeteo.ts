@@ -95,3 +95,68 @@ export async function fetchForecast(latitude: number, longitude: number, fetchIm
     tempMaxC: daily.temperature_2m_max[0],
   }
 }
+
+/** Días de pronóstico que se piden a Open-Meteo para el calendario (hoy + 6). */
+export const DAILY_FORECAST_DAYS = 7
+
+/** Pronóstico de un día (fase 13b). */
+export interface DailyForecastDay {
+  /** YYYY-MM-DD en la zona de la ciudad. */
+  date: string
+  tempMaxC: number
+  tempMinC: number
+  /** 0-100 */
+  precipProbability: number
+}
+
+const dailySchema = z.object({
+  daily: z.object({
+    time: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).min(1),
+    temperature_2m_max: z.array(z.number().nullable()),
+    temperature_2m_min: z.array(z.number().nullable()),
+    precipitation_probability_max: z.array(z.number().nullable()).optional(),
+  }),
+})
+
+export function dailyForecastUrl(latitude: number, longitude: number): string {
+  return (
+    `${FORECAST_URL}?latitude=${latitude}&longitude=${longitude}` +
+    '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+    `&timezone=auto&forecast_days=${DAILY_FORECAST_DAYS}`
+  )
+}
+
+/** Pronóstico diario (hasta 7 días). Los días sin temperaturas se omiten. */
+export async function fetchDailyForecast(
+  latitude: number,
+  longitude: number,
+  fetchImpl: FetchLike,
+): Promise<DailyForecastDay[]> {
+  const parsed = dailySchema.safeParse(await getJson(fetchImpl, dailyForecastUrl(latitude, longitude)))
+  if (!parsed.success) throw new WeatherError('Respuesta inesperada del servicio del clima.')
+  const { daily } = parsed.data
+  const days: DailyForecastDay[] = []
+  daily.time.slice(0, DAILY_FORECAST_DAYS).forEach((date, i) => {
+    const max = daily.temperature_2m_max[i]
+    const min = daily.temperature_2m_min[i]
+    if (max == null || min == null) return
+    days.push({ date, tempMaxC: max, tempMinC: min, precipProbability: daily.precipitation_probability_max?.[i] ?? 0 })
+  })
+  if (days.length === 0) throw new WeatherError('Respuesta inesperada del servicio del clima.')
+  return days
+}
+
+/**
+ * Clima de un día a partir de su pronóstico: la temperatura «de referencia» pesa más la máxima (se viste para el
+ * día, no para la madrugada). No hay lluvia en curso: solo probabilidad.
+ */
+export function weatherFromDaily(day: DailyForecastDay): Weather {
+  const tempC = Math.round((day.tempMinC + (day.tempMaxC - day.tempMinC) * 0.65) * 10) / 10
+  return {
+    tempC,
+    precipProbability: day.precipProbability,
+    isRaining: false,
+    tempMinC: day.tempMinC,
+    tempMaxC: day.tempMaxC,
+  }
+}

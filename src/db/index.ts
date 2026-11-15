@@ -5,6 +5,7 @@ export type {
   FeedbackRepository,
   GarmentRepository,
   OutfitRepository,
+  PlanRepository,
   PurchaseEvaluationRepository,
   Repository,
   SwapRepository,

@@ -1,5 +1,6 @@
-import { Cloud, CloudRain, Heart, RotateCcw, SlidersHorizontal, Sparkles, Sun } from 'lucide-react'
+import { CalendarDays, Cloud, CloudRain, Heart, RotateCcw, SlidersHorizontal, Sparkles, Sun } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAi } from '../ai/AiProviderContext'
 import type { AiProvider } from '../ai/provider'
 import { pruneLayout, type AdjustChange, type OutfitLayout } from '../canvas/adjust'
@@ -8,13 +9,14 @@ import { subscribeCutoutChanged } from '../cutout/events'
 import { OutfitEditFlow, type EditTarget } from '../components/OutfitEditFlow'
 import { OutfitCard, type CardOutfit } from '../components/OutfitCard'
 import { OutfitCarousel } from '../components/OutfitCarousel'
+import { PlannedToday } from '../components/PlannedToday'
 import { SaveOutfitSheet } from '../components/SaveOutfitSheet'
 import { useRepository } from '../components/RepositoryContext'
 import { useToast } from '../components/ToastProvider'
 import { OCCASIONS, OCCASION_LABELS, type FeedbackEntry, type Garment, type Occasion, type Rating } from '../db'
-import { daysBetween, NO_REPEAT_DAYS, suggestOutfits, type Weather, type WearRecord } from '../engine'
+import { daysBetween, NO_REPEAT_DAYS, PLANNED_WINDOW_DAYS, suggestOutfits, type Weather, type WearRecord } from '../engine'
 import { commitOutfitEdit } from '../outfits/edit'
-import { localDateString } from '../lib/date'
+import { addDays, localDateString } from '../lib/date'
 import { useSettings } from '../settings'
 import { loadTaste, maybeUpdateTasteProfile } from '../taste'
 import {
@@ -156,6 +158,10 @@ export default function HoyPage() {
       }
       // El gusto nunca debe impedir sugerir: si falla, se sugiere sin él.
       const taste = await loadTaste(repo, garments).catch(() => null)
+      // Lo planeado a ±2 días cuenta como ocupado (no repetir esa combinación; las prendas se penalizan un poco).
+      const plannedOutfits = (
+        await repo.plans.listBetween(addDays(today, -PLANNED_WINDOW_DAYS), addDays(today, PLANNED_WINDOW_DAYS))
+      ).map((p) => ({ garmentIds: p.garmentIds, date: p.date }))
       const res = await suggestOutfits(
         {
           occasion,
@@ -163,6 +169,7 @@ export default function HoyPage() {
           garments,
           wears,
           recentOutfits,
+          plannedOutfits,
           today,
           ...(settings.requireFavorite ? { requireFavorite: true } : {}),
           ...(taste
@@ -366,7 +373,12 @@ export default function HoyPage() {
 
   return (
     <section>
-      <h1 className="page-title">Hoy</h1>
+      <div className="hoy-head">
+        <h1 className="page-title">Hoy</h1>
+        <Link to="/calendario" className="icon-btn" aria-label="Calendario" title="Calendario">
+          <CalendarDays size={24} aria-hidden="true" />
+        </Link>
+      </div>
 
       <div className="chips chips-scroll" role="group" aria-label="Ocasión">
         {OCCASIONS.map((o) => (
@@ -457,6 +469,8 @@ export default function HoyPage() {
         <Heart size={16} aria-hidden="true" fill={settings.requireFavorite ? 'currentColor' : 'none'} />
         Con una favorita
       </button>
+
+      <PlannedToday today={localDateString()} />
 
       <button
         type="button"

@@ -59,6 +59,8 @@ function stubPlan(occasion: Occasion, weather: EngineContext['weather'], all: Ga
     byId: new Map(all.map((g) => [g.id, g])),
     priorityIds: new Set(),
     recentKeys: new Set(),
+    plannedKeys: new Set(),
+    plannedUse: new Map(),
     hasCombos: true,
     avoidPairs: new Set(),
     tasteApplied: false,
