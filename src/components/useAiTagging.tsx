@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAi } from '../ai/AiProviderContext'
 import { describeAiError } from '../ai/errors'
 import type { TaggedGarment } from '../ai/provider'
+import { downscaleForAi } from '../lib/image'
 
 type AiState = 'idle' | 'loading' | 'done' | 'error'
 
@@ -32,7 +33,7 @@ export function useAiTagging(): AiTagging {
     }
     setAiState('loading')
     try {
-      const values = await ai.getProvider().tagGarment(blob)
+      const values = await ai.getProvider().tagGarment(await downscaleForAi(blob))
       if (id !== runId.current) return
       setSuggestion({ id, values })
       setAiState('done')

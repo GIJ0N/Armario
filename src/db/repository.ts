@@ -7,6 +7,7 @@ import {
   garmentInputSchema,
   TAGS_BY_RATING,
   type FeedbackEntry,
+  type CutoutKind,
   type Garment,
   type GarmentFilter,
   type CandidateEntry,
@@ -33,6 +34,10 @@ export interface GarmentRepository {
   savePhoto(blob: Blob): Promise<string>
   getPhoto(key: string): Promise<Blob | null>
   deletePhoto(key: string): Promise<void>
+  /** Guarda (o reemplaza) el recorte de la prenda; borra el blob del recorte anterior. */
+  setCutout(id: string, blob: Blob, kind: CutoutKind): Promise<Garment>
+  /** Quita el recorte (columnas y blob); la foto original no se toca. */
+  clearCutout(id: string): Promise<Garment>
   close(): void
 }
 
@@ -133,6 +138,8 @@ function rowToGarment(row: Row): Garment {
     status: row.status as Garment['status'],
     notes: row.notes as string,
     created_at: row.created_at as string,
+    cutout_path: (row.cutout_path as string | null) ?? null,
+    cutout_kind: (row.cutout_kind as CutoutKind | null) ?? null,
   }
 }
 
@@ -364,7 +371,7 @@ export class SqliteGarmentRepository implements Repository {
         ],
       })
     })
-    return { ...data, id, created_at }
+    return { ...data, id, created_at, cutout_path: null, cutout_kind: null }
   }
 
   async update(id: string, input: GarmentInput) {
@@ -392,11 +399,23 @@ export class SqliteGarmentRepository implements Repository {
           id,
         ],
       })
+      // El recorte pertenece a la foto anterior: si la foto cambió, se descarta.
+      if (before.photo_path !== data.photo_path && before.cutout_path) {
+        this.db.exec({ sql: 'UPDATE garments SET cutout_path=NULL, cutout_kind=NULL WHERE id=?', bind: [id] })
+      }
     })
     if (before.photo_path && before.photo_path !== data.photo_path) {
       await this.storage.deletePhoto(before.photo_path)
     }
-    return { ...data, id, created_at: before.created_at }
+    const photoChanged = before.photo_path !== data.photo_path
+    if (photoChanged && before.cutout_path) await this.storage.deletePhoto(before.cutout_path)
+    return {
+      ...data,
+      id,
+      created_at: before.created_at,
+      cutout_path: photoChanged ? null : (before.cutout_path ?? null),
+      cutout_kind: photoChanged ? null : (before.cutout_kind ?? null),
+    }
   }
 
   async setStatus(id: string, status: Garment['status']) {
@@ -412,6 +431,36 @@ export class SqliteGarmentRepository implements Repository {
       this.db.exec({ sql: 'DELETE FROM garments WHERE id = ?', bind: [id] })
     })
     if (before.photo_path) await this.storage.deletePhoto(before.photo_path)
+    if (before.cutout_path) await this.storage.deletePhoto(before.cutout_path)
+  }
+
+  async setCutout(id: string, blob: Blob, kind: CutoutKind) {
+    const before = this.select(id)
+    if (!before) throw new Error('Prenda no encontrada')
+    if (!before.photo_path) throw new Error('La prenda no tiene foto')
+    const key = `cutout:${crypto.randomUUID()}`
+    await this.storage.putPhoto(key, blob)
+    try {
+      await this.write(() => {
+        this.db.exec({ sql: 'UPDATE garments SET cutout_path=?, cutout_kind=? WHERE id=?', bind: [key, kind, id] })
+      })
+    } catch (e) {
+      await this.storage.deletePhoto(key)
+      throw e
+    }
+    if (before.cutout_path) await this.storage.deletePhoto(before.cutout_path)
+    return { ...before, cutout_path: key, cutout_kind: kind }
+  }
+
+  async clearCutout(id: string) {
+    const before = this.select(id)
+    if (!before) throw new Error('Prenda no encontrada')
+    if (!before.cutout_path) return before
+    await this.write(() => {
+      this.db.exec({ sql: 'UPDATE garments SET cutout_path=NULL, cutout_kind=NULL WHERE id=?', bind: [id] })
+    })
+    await this.storage.deletePhoto(before.cutout_path)
+    return { ...before, cutout_path: null, cutout_kind: null }
   }
 
   async createOutfit(input: OutfitInput): Promise<Outfit> {

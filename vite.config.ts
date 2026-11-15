@@ -10,6 +10,8 @@ export default defineConfig({
   base,
   // Recomendado por @sqlite.org/sqlite-wasm: que Vite no pre-empaquete el módulo (rompe la ruta del .wasm).
   optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
+  // El worker de recorte importa onnxruntime-web con import() dinámico: necesita formato ES.
+  worker: { format: 'es' },
   plugins: [
     react(),
     VitePWA({
@@ -39,6 +41,20 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,webmanifest,wasm,woff2}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // Los .wasm de ONNX Runtime (15 y 29 MB) no se precachean: engordarían la instalación de todos los
+        // usuarios. Se guardan en tiempo de ejecución la primera vez que se usa el recorte (CacheFirst).
+        globIgnores: ['**/ort-wasm*.wasm'],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => /\/ort-wasm[^/]*\.wasm$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'armario-ort-wasm',
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 3 },
+            },
+          },
+        ],
       },
     }),
   ],

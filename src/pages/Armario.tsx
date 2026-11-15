@@ -128,7 +128,7 @@ export default function ArmarioPage() {
             <li key={g.id} className="card">
               <Link to={`/armario/${g.id}`} className="card-link" aria-label={`Editar ${title}`}>
                 <div className="card-photo">
-                  <GarmentPhoto photoPath={g.photo_path} alt={title} />
+                  <GarmentPhoto photoPath={g.photo_path} cutoutPath={g.cutout_path} alt={title} />
                 </div>
                 <div className="card-body">
                   <strong>{title}</strong>

@@ -35,7 +35,7 @@ function dayLabel(date: string, today: string): string {
 function Thumb({ g }: { g: Garment }) {
   return (
     <div className="usage-thumb">
-      <GarmentPhoto photoPath={g.photo_path} alt={nameOf(g)} />
+      <GarmentPhoto photoPath={g.photo_path} cutoutPath={g.cutout_path} alt={nameOf(g)} />
     </div>
   )
 }
