@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { GeminiProvider } from '../ai/gemini'
@@ -9,7 +10,8 @@ import type { Repository } from '../db'
 import { BackupError } from '../db/backup'
 import { exportBackupNow, reloadApp, restoreBackupFile } from '../lib/backupActions'
 import { describeLastBackup, getLastBackupAt, useBackupStateVersion } from '../lib/backupState'
-import { useSettings } from '../settings'
+import { useSettings, THEMES, type Theme } from '../settings'
+import { THEME_LABELS } from '../settings/theme'
 
 type Probe =
   | { kind: 'idle' }
@@ -178,13 +180,36 @@ export default function AjustesPage() {
     <section>
       <h1 className="page-title">Ajustes</h1>
       <div className="garment-form">
+        <h2 className="section-title">Apariencia</h2>
+        <div className="swatches" role="group" aria-label="Tema de color">
+          {THEMES.map((t: Theme) => (
+            <button
+              key={t}
+              type="button"
+              className="swatch"
+              aria-pressed={settings.theme === t}
+              onClick={() => update({ theme: t })}
+            >
+              <span className="swatch-preview" data-swatch={t} aria-hidden="true">
+                <i />
+                <b />
+                <em />
+              </span>
+              <span className="swatch-label">
+                {THEME_LABELS[t]}
+                {settings.theme === t && <Check size={18} aria-hidden="true" />}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="page-hint">El modo oscuro se activa solo según tu iPhone.</p>
         <h2 className="section-title">Inteligencia artificial</h2>
         <p className="page-hint">
-          Consigue una API key gratuita en{' '}
+          Key gratuita en{' '}
           <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
             Google AI Studio
-          </a>{' '}
-          (https://aistudio.google.com/apikey). Se guarda solo en este dispositivo y no se incluye en los respaldos.
+          </a>
+          ; se guarda solo en este dispositivo.
         </p>
         <label className="field">
           <span>API key de Gemini</span>

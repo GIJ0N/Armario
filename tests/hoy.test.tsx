@@ -105,16 +105,16 @@ describe('pantalla Hoy', () => {
     expect(repo.saved.every((o) => o.source === 'ai')).toBe(true)
   })
 
-  it('"Me lo pongo" registra el uso de hoy, muestra "Puesto hoy ✓" y "Deshacer" lo revierte', async () => {
+  it('"Me lo pongo" registra el uso de hoy, muestra "Puesto hoy" y "Deshacer" lo revierte', async () => {
     stubNetwork()
     const repo = fakeRepo()
     renderHoy(repo)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Sugerir outfits' })).toBeEnabled())
     await userEvent.click(screen.getByRole('button', { name: 'Sugerir outfits' }))
     const cards = await screen.findAllByTestId('outfit-card')
-    expect(within(cards[0]).queryByText('Puesto hoy ✓')).not.toBeInTheDocument()
+    expect(within(cards[0]).queryByText('Puesto hoy')).not.toBeInTheDocument()
     await userEvent.click(within(cards[0]).getByRole('button', { name: 'Me lo pongo' }))
-    expect(await within(cards[0]).findByText('Puesto hoy ✓')).toBeInTheDocument()
+    expect(await within(cards[0]).findByText('Puesto hoy')).toBeInTheDocument()
     expect(repo.savedWears).toHaveLength(1)
     expect(repo.savedWears[0]).toMatchObject({ outfit_id: repo.saved[0].id, date: localDateString() })
     // Las otras tarjetas siguen ofreciendo "Me lo pongo".
@@ -189,7 +189,7 @@ describe('pantalla Hoy', () => {
     await userEvent.click(within(card).getByRole('button', { name: 'Muy formal' }))
     await userEvent.type(within(card).getByLabelText('Comentario (opcional)'), 'demasiado serio')
     await userEvent.click(within(card).getByRole('button', { name: 'Guardar calificación' }))
-    expect(await within(card).findByTestId('rating-saved')).toHaveTextContent('👎 No me gusta · Muy formal')
+    expect(await within(card).findByTestId('rating-saved')).toHaveTextContent('No me gusta · Muy formal')
     expect(repo.ratings).toHaveLength(1)
     expect(repo.ratings[0]).toMatchObject({ outfitId: repo.saved[0].id, rating: 'dislike', tags: ['too_formal'], comment: 'demasiado serio' })
 
@@ -198,7 +198,7 @@ describe('pantalla Hoy', () => {
     expect(within(card).getByRole('button', { name: 'Combinación nueva' })).toBeInTheDocument()
     await userEvent.click(within(card).getByRole('button', { name: 'Cómodo' }))
     await userEvent.click(within(card).getByRole('button', { name: 'Guardar calificación' }))
-    await waitFor(() => expect(within(card).getByTestId('rating-saved')).toHaveTextContent('👍 Me gusta · Cómodo'))
+    await waitFor(() => expect(within(card).getByTestId('rating-saved')).toHaveTextContent('Me gusta · Cómodo'))
     expect(repo.ratings).toHaveLength(1)
     expect(repo.ratings[0]).toMatchObject({ rating: 'like', tags: ['comfortable'] })
   })

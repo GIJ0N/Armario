@@ -1,3 +1,4 @@
+import { WifiOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useOnline } from '../lib/useOnline'
 import { useLocation } from 'react-router-dom'
@@ -19,6 +20,7 @@ export function OfflineChip() {
   if (online) return null
   return (
     <div className="offline-chip" role="status">
+      <WifiOff size={14} aria-hidden="true" />
       Sin conexión
     </div>
   )
@@ -96,7 +98,7 @@ function SafariBanner({ env }: { env?: PlatformEnv }) {
     <div className="banner banner-warn" role="region" aria-label="Aviso de Safari">
       <strong>Abre Armario desde el ícono de tu pantalla de inicio.</strong>
       <p>
-        En Safari, tus datos pueden borrarse tras 7 días sin uso. Toca Compartir → Agregar a pantalla de inicio y
+        En Safari, tus datos pueden borrarse tras 7 días sin uso. Toca Compartir y luego Agregar a pantalla de inicio y
         abre la app desde ese ícono.
       </p>
       <div className="banner-actions">

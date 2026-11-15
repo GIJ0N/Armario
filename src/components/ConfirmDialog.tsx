@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
+import { BottomSheet } from './BottomSheet'
 
 interface Props {
   title: string
@@ -8,29 +9,16 @@ interface Props {
   onCancel: () => void
 }
 
-/** Diálogo de confirmación propio (no usa window.confirm). */
+/** Confirmación propia (no usa window.confirm), presentada como hoja inferior. */
 export function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCancel }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => cancelRef.current?.focus(), [])
-
   return (
-    <div className="dialog-backdrop" onClick={onCancel}>
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="confirm-title"
-        aria-describedby="confirm-msg"
-        className="dialog"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.key === 'Escape' && onCancel()}
-      >
-        <h2 id="confirm-title">{title}</h2>
-        <p id="confirm-msg">{message}</p>
-        <div className="dialog-actions">
-          <button ref={cancelRef} type="button" className="btn" onClick={onCancel}>Cancelar</button>
-          <button type="button" className="btn btn-danger" onClick={onConfirm}>{confirmLabel}</button>
-        </div>
+    <BottomSheet title={title} role="alertdialog" descriptionId="confirm-msg" onClose={onCancel} initialFocus={cancelRef}>
+      <p id="confirm-msg">{message}</p>
+      <div className="sheet-actions">
+        <button ref={cancelRef} type="button" className="btn" onClick={onCancel}>Cancelar</button>
+        <button type="button" className="btn btn-danger" onClick={onConfirm}>{confirmLabel}</button>
       </div>
-    </div>
+    </BottomSheet>
   )
 }

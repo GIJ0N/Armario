@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
+import { ChevronLeft } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { GarmentForm, type GarmentFormSubmit } from '../components/GarmentForm'
 import { useRepository } from '../components/RepositoryContext'
+import { SkeletonBlock } from '../components/Skeleton'
+import { useToast } from '../components/ToastProvider'
 import type { Garment } from '../db'
 
 export default function GarmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const repo = useRepository()
   const navigate = useNavigate()
+  const toast = useToast()
   const [garment, setGarment] = useState<Garment | null | undefined>(undefined)
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -21,7 +25,7 @@ export default function GarmentDetailPage() {
     }
   }, [repo, id])
 
-  if (garment === undefined) return <p className="page-hint">Cargando…</p>
+  if (garment === undefined) return <SkeletonBlock height={340} />
   if (garment === null) {
     return (
       <section>
@@ -41,12 +45,14 @@ export default function GarmentDetailPage() {
       if (newPhoto && photo_path) await repo.deletePhoto(photo_path)
       throw e
     }
+    toast('Cambios guardados')
     navigate('/armario')
   }
 
   async function remove() {
     try {
       await repo.delete(garment!.id)
+      toast('Prenda eliminada')
       navigate('/armario')
     } catch (e) {
       setConfirming(false)
@@ -56,7 +62,12 @@ export default function GarmentDetailPage() {
 
   return (
     <section>
-      <p><Link to="/armario">← Armario</Link></p>
+      <p>
+        <Link to="/armario" className="back-link">
+          <ChevronLeft size={18} aria-hidden="true" />
+          Armario
+        </Link>
+      </p>
       <h1 className="page-title">Editar prenda</h1>
       <GarmentForm initial={garment} submitLabel="Guardar cambios" onSubmit={save} />
       {error && <p role="alert" className="form-error">{error}</p>}

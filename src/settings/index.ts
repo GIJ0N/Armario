@@ -1,6 +1,9 @@
 import { useCallback, useSyncExternalStore } from 'react'
 
 /** Ajustes en localStorage (no en SQLite) para que los respaldos nunca incluyan la API key. */
+export type Theme = 'neutral' | 'warm'
+export const THEMES: readonly Theme[] = ['neutral', 'warm']
+
 export interface Settings {
   geminiApiKey: string
   geminiModel: string
@@ -14,6 +17,8 @@ export interface Settings {
   buyMinOutfits: number
   /** Evaluador de compras: ocasiones mínimas (con al menos un outfit) para «Cómprala». */
   buyMinOccasions: number
+  /** Apariencia: «Neutro» o «Cálido» (el modo oscuro es automático). */
+  theme: Theme
 }
 
 export const SETTINGS_STORAGE_KEY = 'armario.settings'
@@ -30,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   geoCity: null,
   buyMinOutfits: 5,
   buyMinOccasions: 2,
+  theme: 'neutral',
 }
 
 function positiveInt(v: unknown, fallback: number, max: number): number {
@@ -67,6 +73,7 @@ export function loadSettings(): Settings {
     geoCity: typeof stored.geoCity === 'string' ? stored.geoCity : null,
     buyMinOutfits: positiveInt(stored.buyMinOutfits, DEFAULT_SETTINGS.buyMinOutfits, 99),
     buyMinOccasions: positiveInt(stored.buyMinOccasions, DEFAULT_SETTINGS.buyMinOccasions, 6),
+    theme: THEMES.includes(stored.theme as Theme) ? (stored.theme as Theme) : DEFAULT_SETTINGS.theme,
   }
   return cacheValue
 }
