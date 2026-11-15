@@ -17,7 +17,13 @@ export const BACKUP_FORMAT = 1
 const DB_FILE = 'armario.sqlite'
 const MANIFEST_FILE = 'manifest.json'
 const PHOTO_PREFIX = 'photos/'
-const PHOTO_EXT = '.jpg'
+const CUTOUT_KEY_PREFIX = 'cutout:'
+/** Extensiones admitidas en photos/: fotos y recortes bbox son JPEG; los recortes con máscara son PNG (alfa). */
+const EXT_TYPES: Record<string, string> = { '.jpg': 'image/jpeg', '.png': 'image/png' }
+
+function extFor(blob: Blob): string {
+  return blob.type === 'image/png' ? '.png' : '.jpg'
+}
 
 export const manifestSchema = z.object({
   app: z.literal('armario'),
@@ -25,7 +31,10 @@ export const manifestSchema = z.object({
   schemaVersion: z.number().int().min(0),
   exportedAt: z.string(),
   garmentCount: z.number().int().min(0),
+  /** Fotos originales (sin recortes). */
   photoCount: z.number().int().min(0),
+  /** Recortes sin fondo (fase 10); los respaldos anteriores no lo traen. */
+  cutoutCount: z.number().int().min(0).optional(),
 })
 export type BackupManifest = z.infer<typeof manifestSchema>
 
@@ -70,7 +79,9 @@ export interface BackupResult {
 export async function createBackup(storage: Storage, now: Date = new Date()): Promise<BackupResult> {
   const dbBytes = await storage.loadSnapshot()
   if (!dbBytes || dbBytes.byteLength === 0) throw new BackupError('No hay datos que respaldar todavía.')
-  const photos = await storage.listPhotos()
+  const stored = await storage.listPhotos()
+  const photos = stored.filter((p) => !p.key.startsWith(CUTOUT_KEY_PREFIX))
+  const cutouts = stored.filter((p) => p.key.startsWith(CUTOUT_KEY_PREFIX))
   const { garmentCount } = await inspectDb(dbBytes)
   const manifest: BackupManifest = {
     app: 'armario',
@@ -79,14 +90,15 @@ export async function createBackup(storage: Storage, now: Date = new Date()): Pr
     exportedAt: now.toISOString(),
     garmentCount,
     photoCount: photos.length,
+    cutoutCount: cutouts.length,
   }
   const files: Record<string, [Uint8Array, { level: 0 | 6 }]> = {
     [MANIFEST_FILE]: [new TextEncoder().encode(JSON.stringify(manifest, null, 2)), { level: 6 }],
     [DB_FILE]: [dbBytes, { level: 6 }],
   }
-  for (const p of photos) {
-    // Las fotos ya son JPEG comprimido: se guardan sin recomprimir.
-    files[`${PHOTO_PREFIX}${p.key}${PHOTO_EXT}`] = [new Uint8Array(await p.blob.arrayBuffer()), { level: 0 }]
+  for (const p of stored) {
+    // Las fotos (JPEG) y los recortes (PNG/JPEG) ya están comprimidos: se guardan sin recomprimir.
+    files[`${PHOTO_PREFIX}${p.key}${extFor(p.blob)}`] = [new Uint8Array(await p.blob.arrayBuffer()), { level: 0 }]
   }
   const zipped = zipSync(files)
   const filename = `armario-respaldo-${localDateString(now)}.zip`
@@ -158,9 +170,11 @@ export async function importBackup(file: Blob, storage: Storage, now: Date = new
 
   const photos: { key: string; blob: Blob }[] = []
   for (const [name, data] of Object.entries(entries)) {
-    if (!name.startsWith(PHOTO_PREFIX) || !name.endsWith(PHOTO_EXT)) continue
-    const key = name.slice(PHOTO_PREFIX.length, -PHOTO_EXT.length)
-    if (key) photos.push({ key, blob: new Blob([data as BlobPart], { type: 'image/jpeg' }) })
+    if (!name.startsWith(PHOTO_PREFIX)) continue
+    const ext = Object.keys(EXT_TYPES).find((e) => name.endsWith(e))
+    if (!ext) continue
+    const key = name.slice(PHOTO_PREFIX.length, -ext.length)
+    if (key) photos.push({ key, blob: new Blob([data as BlobPart], { type: EXT_TYPES[ext] }) })
   }
 
   // Regla: nada se reemplaza sin guardar antes la base actual.

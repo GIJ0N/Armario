@@ -17,7 +17,7 @@ function Thumb({ g, label }: { g: Garment; label?: string }) {
   return (
     <li className="outfit-item" title={nameOf(g)}>
       <div className="outfit-thumb">
-        <GarmentPhoto photoPath={g.photo_path} alt={nameOf(g)} />
+        <GarmentPhoto photoPath={g.photo_path} cutoutPath={g.cutout_path} alt={nameOf(g)} />
       </div>
       <span>{label ?? nameOf(g)}</span>
     </li>
@@ -54,7 +54,7 @@ export function PurchaseResult({ garment, evaluation, wardrobe, fromWishlist, bu
     <div className="purchase-result" data-testid="purchase-result">
       <div className="purchase-head">
         <div className="usage-thumb purchase-thumb">
-          <GarmentPhoto photoPath={garment.photo_path} alt={nameOf(garment)} />
+          <GarmentPhoto photoPath={garment.photo_path} cutoutPath={garment.cutout_path} alt={nameOf(garment)} />
         </div>
         <div>
           <h2 className="section-title">{nameOf(garment)}</h2>
@@ -90,7 +90,7 @@ export function PurchaseResult({ garment, evaluation, wardrobe, fromWishlist, bu
             {duplicates.map((g) => (
               <li key={g.id} title={nameOf(g)}>
                 <div className="usage-thumb">
-                  <GarmentPhoto photoPath={g.photo_path} alt={nameOf(g)} />
+                  <GarmentPhoto photoPath={g.photo_path} cutoutPath={g.cutout_path} alt={nameOf(g)} />
                 </div>
               </li>
             ))}

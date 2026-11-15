@@ -15,6 +15,7 @@ import { wardrobe30 } from './fixtures/wardrobe30'
 
 // jsdom no decodifica imágenes: simulamos el redimensionado.
 vi.mock('../src/lib/image', () => ({
+  downscaleForAi: async (b: Blob) => b,
   resizeImage: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }),
 }))
 

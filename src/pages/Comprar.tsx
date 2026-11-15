@@ -9,6 +9,7 @@ import { GarmentPhoto } from '../components/GarmentPhoto'
 import { PurchaseResult, VerdictBadge } from '../components/PurchaseResult'
 import { useRepository } from '../components/RepositoryContext'
 import { useAiTagging } from '../components/useAiTagging'
+import { queueCutout, useBackgroundRemover } from '../cutout'
 import { CATEGORY_LABELS, type CandidateEntry, type Garment, type PurchaseEvaluation } from '../db'
 import { evaluatePurchase, toStoredEvaluation } from '../purchase'
 import { useSettings } from '../settings'
@@ -25,6 +26,7 @@ const nameOf = (g: Garment) => g.subcategory || CATEGORY_LABELS[g.category]
 export default function ComprarPage() {
   const toast = useToast()
   const repo = useRepository()
+  const remover = useBackgroundRemover()
   const navigate = useNavigate()
   const ai = useAi()
   const [settings] = useSettings()
@@ -82,6 +84,7 @@ export default function ComprarPage() {
       throw e
     }
     setMessage(null)
+    if (photo_path) void queueCutout(repo, remover, garment, suggestion?.values.bbox)
     try {
       const evaluation = await runEvaluation(garment)
       setViewing({ garment, evaluation, fromWishlist: false })
@@ -236,7 +239,7 @@ export default function ComprarPage() {
             <li key={entry.garment.id}>
               <button type="button" className="usage-row wish-row" disabled={busy} onClick={() => openFromWishlist(entry)} aria-label={`Ver evaluación de ${nameOf(entry.garment)}`}>
                 <span className="usage-thumb">
-                  <GarmentPhoto photoPath={entry.garment.photo_path} alt={nameOf(entry.garment)} />
+                  <GarmentPhoto photoPath={entry.garment.photo_path} cutoutPath={entry.garment.cutout_path} alt={nameOf(entry.garment)} />
                 </span>
                 <span className="usage-name">{nameOf(entry.garment)}</span>
                 {entry.evaluation ? (

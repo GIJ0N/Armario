@@ -23,7 +23,7 @@ test('agregar, recargar, editar y eliminar una prenda', async ({ page }) => {
     w: img.naturalWidth,
     h: img.naturalHeight,
   }))
-  expect(Math.max(size.w, size.h)).toBe(1024)
+  expect(Math.max(size.w, size.h)).toBe(1600)
   // Sin API key: aviso hacia Ajustes y el formulario manual sigue funcionando.
   await expect(page.getByText(/agrega tu API key/)).toBeVisible()
 
@@ -285,4 +285,15 @@ test('Comprar: evaluar una candidata sin API key, ver el veredicto y comprarla',
   await expect(page.getByTestId('wardrobe-gap')).toHaveCount(0)
   await page.getByRole('button', { name: 'Calcular' }).click()
   await expect(page.getByTestId('wardrobe-gap').first()).toContainText('desbloquearía')
+})
+
+test('Ajustes muestra «Recorte de fondo» sin descargar el modelo por su cuenta', async ({ page }) => {
+  const requested: string[] = []
+  page.on('request', (r) => requested.push(r.url()))
+  await page.goto('./#/ajustes')
+  await expect(page.getByRole('heading', { name: 'Recorte de fondo' })).toBeVisible()
+  await expect(page.getByTestId('cutout-model-state')).toContainText('No descargado')
+  await expect(page.getByRole('button', { name: 'Descargar modelo' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Probar recorte' })).toBeDisabled()
+  expect(requested.filter((u) => /huggingface|\.onnx|\.wasm/.test(u.replace(/sqlite3[^/]*\.wasm/, '')))).toEqual([])
 })

@@ -5,6 +5,7 @@ import { GeminiProvider } from '../ai/gemini'
 import { AiNotConfiguredError, aiErrorDetail, describeAiError } from '../ai/errors'
 import { useAi } from '../ai/AiProviderContext'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { CutoutSettings } from '../components/CutoutSettings'
 import { useRepository } from '../components/RepositoryContext'
 import type { Repository } from '../db'
 import { BackupError } from '../db/backup'
@@ -325,6 +326,8 @@ export default function AjustesPage() {
             </button>
           </>
         )}
+
+        <CutoutSettings />
 
         <h2 className="section-title">Respaldo</h2>
         <p className="page-hint">

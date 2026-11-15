@@ -91,6 +91,18 @@ export function fakeRepo(initial: Garment[] = wardrobe30) {
     },
     getPhoto: async () => null,
     deletePhoto: async () => {},
+    setCutout: async (id, _blob, kind) => {
+      const g = garments.find((x) => x.id === id)!
+      g.cutout_path = `cutout:${id}`
+      g.cutout_kind = kind
+      return g
+    },
+    clearCutout: async (id) => {
+      const g = garments.find((x) => x.id === id)!
+      g.cutout_path = null
+      g.cutout_kind = null
+      return g
+    },
     close: () => {},
   }
   return repo

@@ -15,6 +15,7 @@ import { fakeRepo } from './fixtures/fakeRepo'
 // jsdom no decodifica imágenes: simulamos el redimensionado.
 vi.mock('../src/lib/image', () => ({
   resizeImage: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }),
+  downscaleForAi: async (b: Blob) => b,
 }))
 
 function renderApp(path: string, repo = fakeRepo([]), ai?: MockAiProvider) {

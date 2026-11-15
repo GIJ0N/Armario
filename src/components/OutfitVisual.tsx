@@ -10,7 +10,7 @@ export function OutfitVisual({ items }: { items: Garment[] }) {
         return (
           <li key={g.id} className="outfit-item">
             <div className="outfit-thumb">
-              <GarmentPhoto photoPath={g.photo_path} alt={title} />
+              <GarmentPhoto photoPath={g.photo_path} cutoutPath={g.cutout_path} alt={title} />
             </div>
             <span className="outfit-item-name">{title}</span>
           </li>

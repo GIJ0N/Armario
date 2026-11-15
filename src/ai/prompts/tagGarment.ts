@@ -28,6 +28,7 @@ Fields:
 - occasions: array with zero or more of ${OCCASIONS.map((o) => `"${o}"`).join(', ')} where the item would be appropriate (plant_work = factory/plant floor work, office = office, gym = exercise, casual = everyday leisure, date = date night, formal_event = wedding or formal event).
 - is_statement: true only if the item is bold or eye-catching (loud print, vivid color, unusual design).
 - notes: one short Spanish sentence with any detail useful for styling, or an empty string.
+- bbox: optional tight bounding box of the garment in the image as normalized fractions of the image width/height between 0 and 1, origin at the top-left corner: {"x": left edge, "y": top edge, "w": width, "h": height}, with x+w <= 1 and y+h <= 1. Include the whole item and nothing else; omit it if you are not sure.
 
 Use the exact English keys and enum values above. Describe only what is visible; do not invent brands.`
 
@@ -48,6 +49,16 @@ export const TAG_GARMENT_JSON_SCHEMA = {
     occasions: { type: 'ARRAY', items: { type: 'STRING', enum: [...OCCASIONS] } },
     is_statement: { type: 'BOOLEAN' },
     notes: { type: 'STRING' },
+    bbox: {
+      type: 'OBJECT',
+      properties: {
+        x: { type: 'NUMBER' },
+        y: { type: 'NUMBER' },
+        w: { type: 'NUMBER' },
+        h: { type: 'NUMBER' },
+      },
+      required: ['x', 'y', 'w', 'h'],
+    },
   },
   required: [
     'category',

@@ -4,6 +4,7 @@ import { GarmentForm, type GarmentFormSubmit } from '../components/GarmentForm'
 import { useRepository } from '../components/RepositoryContext'
 import { useToast } from '../components/ToastProvider'
 import { useAiTagging } from '../components/useAiTagging'
+import { queueCutout, useBackgroundRemover } from '../cutout'
 
 /** Una foto de la cola: tiene su propio estado de IA, así que cada foto se etiqueta de a una. */
 function PhotoReview({
@@ -20,16 +21,20 @@ function PhotoReview({
   onSkip: () => void
 }) {
   const repo = useRepository()
+  const remover = useBackgroundRemover()
   const { onPhotoChange, suggestion, aiSlot } = useAiTagging()
 
   async function save({ data, newPhoto }: GarmentFormSubmit) {
     const photo_path = newPhoto ? await repo.savePhoto(newPhoto) : null
+    let garment
     try {
-      await repo.create({ ...data, photo_path })
+      garment = await repo.create({ ...data, photo_path })
     } catch (e) {
       if (photo_path) await repo.deletePhoto(photo_path)
       throw e
     }
+    // Recorte sin fondo en segundo plano: no bloquea el guardado ni la cola.
+    if (photo_path) void queueCutout(repo, remover, garment, suggestion?.values.bbox)
     onSaved()
   }
 
@@ -62,6 +67,7 @@ export default function AgregarPage() {
   const repo = useRepository()
   const navigate = useNavigate()
   const toast = useToast()
+  const remover = useBackgroundRemover()
   const { onPhotoChange, suggestion, aiSlot } = useAiTagging()
   const [queue, setQueue] = useState<File[] | null>(null)
   const [index, setIndex] = useState(0)
@@ -69,12 +75,14 @@ export default function AgregarPage() {
 
   async function save({ data, newPhoto }: GarmentFormSubmit) {
     const photo_path = newPhoto ? await repo.savePhoto(newPhoto) : null
+    let garment
     try {
-      await repo.create({ ...data, photo_path })
+      garment = await repo.create({ ...data, photo_path })
     } catch (e) {
       if (photo_path) await repo.deletePhoto(photo_path)
       throw e
     }
+    if (photo_path) void queueCutout(repo, remover, garment, suggestion?.values.bbox)
     toast('Prenda guardada')
     navigate('/armario')
   }

@@ -41,9 +41,16 @@ export const garmentInputSchema = z.object({
 export type GarmentInput = z.input<typeof garmentInputSchema>
 export type GarmentData = z.output<typeof garmentInputSchema>
 
+export const CUTOUT_KINDS = ['mask', 'bbox'] as const
+/** 'mask' = fondo transparente (modelo en el dispositivo); 'bbox' = recorte rectangular con el cuadro de la IA. */
+export type CutoutKind = (typeof CUTOUT_KINDS)[number]
+
 export interface Garment extends GarmentData {
   id: string
   created_at: string
+  /** Clave del recorte (`cutout:<uuid>`) en el almacén de fotos; null/ausente si no hay recorte. */
+  cutout_path?: string | null
+  cutout_kind?: CutoutKind | null
 }
 
 export interface GarmentFilter {
