@@ -20,9 +20,14 @@ Armario es una PWA personal (Vite + React + TypeScript, SQLite WASM en el iPhone
 - `npm test`: Vitest (`vitest run`).
 - `npm run build`: typecheck + build de producción. Para GitHub Pages: `VITE_BASE=/armario/ npm run build`.
 - `npm run dev`: servidor de desarrollo.
+- `npm run e2e`: Playwright con el Chrome del sistema (`/usr/bin/google-chrome`); construye y sirve con `VITE_BASE=/Armario/`.
 
 Antes de cerrar una fase, lint, typecheck, test y build deben pasar sin errores.
 
+## Almacenamiento
+
+SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción de escritura se exporta la base completa (`sqlite3_js_db_export`) a IndexedDB y al abrir se restaura con `sqlite3_deserialize`; no se usa OPFS (GitHub Pages no permite COOP/COEP y OPFS es irregular en iOS). Las fotos son Blobs en otro object store de IndexedDB; `garments.photo_path` guarda la clave (`photo:<uuid>`). La UI solo usa `GarmentRepository` (`src/db/repository.ts`) y el adaptador `Storage` (`src/db/storage.ts`), de modo que el backend se puede reemplazar. Migraciones en `src/db/migrations/`, con `PRAGMA user_version`.
+
 ## Estado
 
-Fase actual: 0 completada; siguiente: 1
+Fase actual: 1 completada; siguiente: 2
