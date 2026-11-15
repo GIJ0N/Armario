@@ -1,5 +1,6 @@
 import type { BBox } from '../ai/provider'
 import type { CutoutKind, Garment, Repository } from '../db'
+import { checkOnFirstUse, hasCrashed, isSkipped, withInFlight } from './crashGuard'
 import { cropToBBoxBlob } from './imageOps'
 import { CUTOUT_TIMEOUT_MS } from './modelConfig'
 import { CutoutError, type BackgroundRemover, type CutoutEngine } from './types'
@@ -23,6 +24,10 @@ export interface CutoutOptions {
   /** Cuadro normalizado de la IA para el plan B. */
   bbox?: BBox
   timeoutMs?: number
+  /** Prenda en curso: se anota en la marca de «recorte en curso» y, si está en la lista de omitidas, no se usa el modelo. */
+  garmentId?: string
+  /** No usar el modelo (solo plan B). */
+  skipModel?: boolean
   /** Para pruebas: reemplaza el recorte rectangular (que necesita canvas). */
   cropBBox?: (original: Blob, bbox: BBox) => Promise<Blob>
 }
@@ -47,13 +52,15 @@ async function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => voi
  * cuadro de la IA; (3) nada (la interfaz usa la foto original). Nunca descarga el modelo ni lanza por fallos del modelo.
  */
 export async function generateCutout(original: Blob, opts: CutoutOptions): Promise<CutoutAttempt> {
-  const { remover, bbox, timeoutMs = CUTOUT_TIMEOUT_MS, cropBBox = cropToBBoxBlob } = opts
+  const { remover, bbox, timeoutMs = CUTOUT_TIMEOUT_MS, cropBBox = cropToBBoxBlob, garmentId, skipModel } = opts
+  checkOnFirstUse()
+  const modelAllowed = !skipModel && !isSkipped(garmentId)
   let maskError: Error | null = null
   let maskSkipped = true
-  if (await remover.isDownloaded().catch(() => false)) {
+  if (modelAllowed && (await remover.isDownloaded().catch(() => false))) {
     maskSkipped = false
     try {
-      const blob = await withTimeout(remover.remove(original), timeoutMs, () => remover.dispose?.())
+      const blob = await withInFlight(garmentId, () => withTimeout(remover.remove(original), timeoutMs, () => remover.dispose?.()))
       return { result: { blob, kind: 'mask', engine: remover.lastEngine ?? 'wasm' }, maskError: null, maskSkipped }
     } catch (e) {
       maskError = e instanceof Error ? e : new Error(String(e))
@@ -91,7 +98,7 @@ export async function createCutoutFor(
   if (!garment.photo_path) return { garment, result: null, maskError: null, maskSkipped: true }
   const photo = await repo.getPhoto(garment.photo_path)
   if (!photo) return { garment, result: null, maskError: null, maskSkipped: true }
-  const attempt = await generateCutout(photo, opts)
+  const attempt = await generateCutout(photo, { garmentId: garment.id, ...opts })
   if (!attempt.result) return { garment, ...attempt }
   const updated = await repo.setCutout(garment.id, attempt.result.blob, attempt.result.kind)
   return { garment: updated, ...attempt }
@@ -100,9 +107,13 @@ export async function createCutoutFor(
 /**
  * Después de guardar una prenda: recorte en segundo plano, sin bloquear. Máscara solo si el modelo ya está
  * descargado; si no, recorte con el cuadro de la IA; si tampoco hay, no hace nada. Los errores se ignoran.
+ * Tras un cierre por memoria sin confirmar en Ajustes no usa el modelo (solo plan B); las prendas omitidas tampoco.
  */
 export function queueCutout(repo: Repository, remover: BackgroundRemover, garment: Garment, bbox?: BBox): Promise<void> {
-  return runExclusive(() => createCutoutFor(repo, garment, { remover, bbox }))
+  return runExclusive(() => {
+    checkOnFirstUse()
+    return createCutoutFor(repo, garment, { remover, bbox, skipModel: hasCrashed() })
+  })
     .then(() => undefined)
     .catch(() => undefined)
 }

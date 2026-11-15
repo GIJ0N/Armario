@@ -8,6 +8,7 @@ import {
   cleanMaskAlpha,
   close3,
   cropRgba,
+  cutoutFromAlpha,
   cutoutFromMask,
   decontaminateEdges,
   featherMask,
@@ -275,5 +276,31 @@ describe('limpieza de la máscara', () => {
     mask[5 * 20 + 5] = 1
     mask[15 * 20 + 10] = 1
     expect(cutoutFromMask(image(20, 20), 20, 20, mask, 20, 20)).toBeNull()
+  })
+})
+
+describe('cutoutFromAlpha (alfa en bytes, como lo manda el worker)', () => {
+  it('da lo mismo que cutoutFromMask con la salida cruda', () => {
+    const w = 20
+    const h = 20
+    const mask = new Float32Array(w * h)
+    for (let y = 5; y < 15; y++) for (let x = 4; x < 16; x++) mask[y * w + x] = 1
+    const a = cutoutFromMask(image(w, h), w, h, mask, w, h, 0)!
+    const b = cutoutFromAlpha(image(w, h), w, h, maskToAlpha(mask), w, h, 0)!
+    expect(b.width).toBe(a.width)
+    expect(b.height).toBe(a.height)
+    expect(Array.from(b.rgba)).toEqual(Array.from(a.rgba))
+  })
+
+  it('no modifica la imagen de entrada y omite decontaminar si no hay bordes parciales', () => {
+    const w = 40
+    const h = 40
+    const rgba = image(w, h)
+    const before = Array.from(rgba)
+    const alpha = new Uint8ClampedArray(w * h)
+    for (let y = 8; y < 32; y++) for (let x = 8; x < 32; x++) alpha[y * w + x] = 255
+    const out = cutoutFromAlpha(rgba, w, h, alpha, w, h, 0)!
+    expect(Array.from(rgba)).toEqual(before)
+    expect(out.width).toBeLessThanOrEqual(w)
   })
 })

@@ -1,5 +1,5 @@
 import { CUTOUT_MODEL, MIN_MASK_COVERAGE } from './modelConfig'
-import { bboxToRect, cutoutFromMask, padRect, type Rect } from './geometry'
+import { bboxToRect, cutoutFromAlpha, padRect, type Rect } from './geometry'
 import { CutoutError } from './types'
 
 /** Operaciones con canvas (navegador). La lógica numérica vive en geometry.ts. */
@@ -32,9 +32,10 @@ export async function imageToModelInput(image: Blob): Promise<{ data: Float32Arr
   const size = CUTOUT_MODEL.inputSize
   const bitmap = await decode(image)
   try {
-    const { ctx } = makeCanvas(size, size)
+    const { canvas, ctx } = makeCanvas(size, size)
     ctx.drawImage(bitmap, 0, 0, size, size)
     const px = ctx.getImageData(0, 0, size, size).data
+    release(canvas)
     const plane = size * size
     const data = new Float32Array(3 * plane)
     for (let i = 0; i < plane; i++) {
@@ -48,22 +49,39 @@ export async function imageToModelInput(image: Blob): Promise<{ data: Float32Arr
   }
 }
 
-/** Aplica la máscara del modelo a la foto original (resolución completa), recorta al contenido y devuelve un PNG con alfa. */
-export async function maskToCutoutBlob(original: Blob, mask: Float32Array, maskSize: number): Promise<Blob> {
+/** Aplica la máscara (alfa 0–255 que manda el worker) a la foto original, recorta al contenido y devuelve un PNG con alfa. */
+export async function maskToCutoutBlob(original: Blob, alpha: Uint8ClampedArray, maskSize: number): Promise<Blob> {
   const bitmap = await decode(original)
+  let canvasToFree: HTMLCanvasElement | null = null
+  let outCanvas: HTMLCanvasElement | null = null
   try {
     const { width: w, height: h } = bitmap
-    const { ctx } = makeCanvas(w, h)
+    const { canvas, ctx } = makeCanvas(w, h)
+    canvasToFree = canvas
     ctx.drawImage(bitmap, 0, 0)
-    const rgba = ctx.getImageData(0, 0, w, h).data
-    const result = cutoutFromMask(rgba, w, h, mask, maskSize, maskSize)
+    bitmap.close()
+    let rgba: Uint8ClampedArray | null = ctx.getImageData(0, 0, w, h).data
+    // Se suelta el lienzo grande antes de armar el recorte: no coexisten la foto completa en canvas y en memoria.
+    release(canvas)
+    canvasToFree = null
+    const result = cutoutFromAlpha(rgba, w, h, alpha, maskSize, maskSize)
+    rgba = null
     if (!result || result.coverage < MIN_MASK_COVERAGE) throw new CutoutError('empty-mask', 'El modelo no encontró la prenda en la foto.')
     const out = makeCanvas(result.width, result.height)
-    out.ctx.putImageData(new ImageData(new Uint8ClampedArray(result.rgba), result.width, result.height), 0, 0)
+    outCanvas = out.canvas
+    out.ctx.putImageData(new ImageData(result.rgba as Uint8ClampedArray<ArrayBuffer>, result.width, result.height), 0, 0)
     return await toBlob(out.canvas, 'image/png')
   } finally {
     bitmap.close()
+    if (canvasToFree) release(canvasToFree)
+    if (outCanvas) release(outCanvas)
   }
+}
+
+/** Libera el búfer de píxeles de un canvas (Safari lo retiene hasta que el lienzo se recolecta). */
+function release(canvas: HTMLCanvasElement) {
+  canvas.width = 0
+  canvas.height = 0
 }
 
 /** Plan B: recorta la foto original (JPEG, sin transparencia) al cuadro normalizado que propuso la IA, con margen. */
@@ -76,7 +94,11 @@ export async function cropToBBoxBlob(original: Blob, bbox: Rect): Promise<Blob> 
     ctx.fillStyle = '#fff'
     ctx.fillRect(0, 0, rect.w, rect.h)
     ctx.drawImage(bitmap, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h)
-    return await toBlob(canvas, 'image/jpeg', 0.85)
+    try {
+      return await toBlob(canvas, 'image/jpeg', 0.85)
+    } finally {
+      release(canvas)
+    }
   } finally {
     bitmap.close()
   }

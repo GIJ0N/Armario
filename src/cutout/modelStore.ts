@@ -88,9 +88,9 @@ export async function readCachedModel(): Promise<ArrayBuffer | null> {
  * Pide los .wasm del runtime desde la página para que el service worker los guarde (CacheFirst) y sirvan sin conexión.
  * Falla en silencio: si no hay red, el runtime se descargará al primer uso.
  */
-export async function prefetchRuntime(preference: 'auto' | 'wasm'): Promise<void> {
+export async function prefetchRuntime(preference: 'wasm' | 'webgpu'): Promise<void> {
   const urls = [ORT_WASM_URL]
-  if (preference === 'auto' && webGpuAvailable()) urls.push(ORT_WEBGPU_WASM_URL)
+  if (preference === 'webgpu' && webGpuAvailable()) urls.push(ORT_WEBGPU_WASM_URL)
   await Promise.all(
     urls.map((u) =>
       fetch(u)

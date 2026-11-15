@@ -2,11 +2,15 @@ import type { EnginePreference } from './protocol'
 
 const KEY = 'armario.cutoutEngine'
 
+/** WASM por defecto en todas partes. Los valores antiguos ('auto') migran a 'wasm'; WebGPU solo si se eligió a mano. */
 export function getEnginePreference(): EnginePreference {
   try {
-    return localStorage.getItem(KEY) === 'wasm' ? 'wasm' : 'auto'
+    const stored = localStorage.getItem(KEY)
+    if (stored === 'webgpu') return 'webgpu'
+    if (stored !== null && stored !== 'wasm') localStorage.setItem(KEY, 'wasm')
+    return 'wasm'
   } catch {
-    return 'auto'
+    return 'wasm'
   }
 }
 
@@ -14,7 +18,7 @@ export function setEnginePreference(pref: EnginePreference) {
   try {
     localStorage.setItem(KEY, pref)
   } catch {
-    /* sin almacenamiento: se queda en automático */
+    /* sin almacenamiento: se queda en WASM */
   }
 }
 
