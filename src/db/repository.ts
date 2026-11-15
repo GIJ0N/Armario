@@ -6,6 +6,8 @@ import {
   type Garment,
   type GarmentFilter,
   type GarmentInput,
+  type Outfit,
+  type OutfitInput,
 } from './types'
 
 /** Interfaz de acceso a prendas y fotos; la UI solo depende de esto. */
@@ -21,6 +23,18 @@ export interface GarmentRepository {
   getPhoto(key: string): Promise<Blob | null>
   deletePhoto(key: string): Promise<void>
   close(): void
+}
+
+/** Outfits sugeridos (fase 3); «me lo pongo» y feedback se agregan en las fases 4 y 5. */
+export interface OutfitRepository {
+  create(input: OutfitInput): Promise<Outfit>
+  /** Outfits creados en los últimos `days` días, del más reciente al más antiguo. */
+  listRecent(days: number, now?: Date): Promise<Outfit[]>
+}
+
+/** Todo lo que la UI necesita del almacenamiento. */
+export interface Repository extends GarmentRepository {
+  readonly outfits: OutfitRepository
 }
 
 type Row = Record<string, unknown>
@@ -45,7 +59,24 @@ function rowToGarment(row: Row): Garment {
   }
 }
 
-export class SqliteGarmentRepository implements GarmentRepository {
+function rowToOutfit(row: Row): Outfit {
+  return {
+    id: row.id as string,
+    garment_ids: JSON.parse(row.garment_ids as string),
+    occasion: row.occasion as Outfit['occasion'],
+    weather_snapshot: row.weather_snapshot ? JSON.parse(row.weather_snapshot as string) : null,
+    reasoning: row.reasoning as string,
+    source: row.source as Outfit['source'],
+    created_at: row.created_at as string,
+  }
+}
+
+export class SqliteGarmentRepository implements Repository {
+  readonly outfits: OutfitRepository = {
+    create: (input) => this.createOutfit(input),
+    listRecent: (days, now) => this.listRecentOutfits(days, now),
+  }
+
   private queue: Promise<unknown> = Promise.resolve()
 
   private sqlite3: Sqlite3Static
@@ -177,6 +208,34 @@ export class SqliteGarmentRepository implements GarmentRepository {
       this.db.exec({ sql: 'DELETE FROM garments WHERE id = ?', bind: [id] })
     })
     if (before.photo_path) await this.storage.deletePhoto(before.photo_path)
+  }
+
+  async createOutfit(input: OutfitInput): Promise<Outfit> {
+    const id = crypto.randomUUID()
+    const created_at = new Date().toISOString()
+    await this.write(() => {
+      this.db.exec({
+        sql: `INSERT INTO outfits (id, garment_ids, occasion, weather_snapshot, reasoning, source, created_at)
+          VALUES (?,?,?,?,?,?,?)`,
+        bind: [
+          id,
+          JSON.stringify(input.garment_ids),
+          input.occasion,
+          input.weather_snapshot ? JSON.stringify(input.weather_snapshot) : null,
+          input.reasoning,
+          input.source,
+          created_at,
+        ],
+      })
+    })
+    return { ...input, id, created_at }
+  }
+
+  async listRecentOutfits(days: number, now: Date = new Date()): Promise<Outfit[]> {
+    const since = new Date(now.getTime() - days * 86_400_000).toISOString()
+    return this.db
+      .selectObjects('SELECT * FROM outfits WHERE created_at >= ? ORDER BY created_at DESC, rowid DESC', [since])
+      .map(rowToOutfit)
   }
 
   async savePhoto(blob: Blob) {

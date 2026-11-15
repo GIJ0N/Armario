@@ -34,6 +34,13 @@ export async function openSqlite(storage: Storage): Promise<Database> {
       throw new Error(`No se pudo restaurar la base (código ${rc})`)
     }
   }
+  if (snapshot && snapshot.byteLength > 0) {
+    const version = Number(db.selectValue('PRAGMA user_version') ?? 0)
+    if (version < MIGRATIONS.length) {
+      // Regla: ninguna migración corre sin un respaldo previo de la base.
+      await storage.saveBackupSnapshot(`pre-migration-v${version}`, snapshot)
+    }
+  }
   const migrated = runMigrations(db)
   db.exec('PRAGMA foreign_keys = ON')
   if (migrated) await saveSnapshot(sqlite3, db, storage)

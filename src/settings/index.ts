@@ -5,9 +5,11 @@ export interface Settings {
   geminiApiKey: string
   geminiModel: string
   city: string
-  /** Se llenan en la fase 3 (clima); null por ahora. */
+  /** Coordenadas de `geoCity` (caché de la geocodificación de Open-Meteo). */
   latitude: number | null
   longitude: number | null
+  /** Ciudad para la que se calcularon latitude/longitude; si cambia `city`, se vuelve a buscar. */
+  geoCity: string | null
 }
 
 export const SETTINGS_STORAGE_KEY = 'armario.settings'
@@ -19,6 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
   city: 'Monterrey',
   latitude: null,
   longitude: null,
+  geoCity: null,
 }
 
 const listeners = new Set<() => void>()
@@ -49,6 +52,7 @@ export function loadSettings(): Settings {
     city: typeof stored.city === 'string' && stored.city.trim() ? stored.city : DEFAULT_SETTINGS.city,
     latitude: typeof stored.latitude === 'number' ? stored.latitude : null,
     longitude: typeof stored.longitude === 'number' ? stored.longitude : null,
+    geoCity: typeof stored.geoCity === 'string' ? stored.geoCity : null,
   }
   return cacheValue
 }

@@ -62,3 +62,53 @@ test('agregar, recargar, editar y eliminar una prenda', async ({ page }) => {
   await page.reload()
   await expect(page.getByText('No hay prendas')).toBeVisible()
 })
+
+test('Hoy: sin API key sugiere un outfit por reglas con el clima simulado', async ({ page }) => {
+  let geminiCalls = 0
+  await page.route('**/generativelanguage.googleapis.com/**', (route) => {
+    geminiCalls++
+    return route.abort()
+  })
+  await page.route('**/geocoding-api.open-meteo.com/**', (route) =>
+    route.fulfill({
+      json: { results: [{ name: 'Monterrey', latitude: 25.67, longitude: -100.31 }] },
+    }),
+  )
+  await page.route('**/api.open-meteo.com/**', (route) =>
+    route.fulfill({
+      json: {
+        current: { temperature_2m: 22, apparent_temperature: 22, precipitation: 0, weather_code: 1 },
+        daily: {
+          temperature_2m_max: [26],
+          temperature_2m_min: [17],
+          precipitation_probability_max: [10],
+        },
+      },
+    }),
+  )
+
+  for (const [category, name] of [
+    ['top', 'Polo e2e'],
+    ['bottom', 'Chinos e2e'],
+    ['shoes', 'Mocasines e2e'],
+  ] as const) {
+    await page.goto('./#/agregar')
+    await page.getByLabel('Categoría *').selectOption(category)
+    await page.getByLabel('Subcategoría').fill(name)
+    await page.getByLabel('Formalidad *').selectOption('3')
+    await page.getByLabel('Abrigo *').selectOption('2')
+    await page.getByRole('button', { name: 'Guardar prenda' }).click()
+    await expect(page.getByText(name)).toBeVisible()
+  }
+
+  await page.goto('./#/')
+  await expect(page.getByTestId('weather-card')).toContainText('22°')
+  await expect(page.getByTestId('weather-card')).toContainText('Lluvia 10%')
+  await page.getByRole('button', { name: 'Sugerir outfits' }).click()
+  const cards = page.getByTestId('outfit-card')
+  await expect(cards.first()).toBeVisible()
+  expect(await cards.count()).toBeGreaterThanOrEqual(1)
+  await expect(cards.first().getByTestId('source-badge')).toHaveText('reglas')
+  await expect(cards.first()).toContainText('Polo e2e')
+  expect(geminiCalls).toBe(0)
+})

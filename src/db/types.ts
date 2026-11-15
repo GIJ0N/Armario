@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { Weather } from '../engine/types'
 
 export const CATEGORIES = ['top', 'bottom', 'shoes', 'outerwear', 'accessory'] as const
 export const STATUSES = ['active', 'laundry', 'retired', 'candidate'] as const
@@ -49,4 +50,20 @@ export interface GarmentFilter {
   category?: Category
   /** Si se omite, no se filtra por estado. */
   statuses?: readonly Status[]
+}
+
+export const OUTFIT_SOURCES = ['ai', 'manual', 'rules'] as const
+export type OutfitSourceDb = (typeof OUTFIT_SOURCES)[number]
+
+export interface OutfitInput {
+  garment_ids: string[]
+  occasion: Occasion
+  weather_snapshot: Weather | null
+  reasoning: string
+  source: OutfitSourceDb
+}
+
+export interface Outfit extends OutfitInput {
+  id: string
+  created_at: string
 }
