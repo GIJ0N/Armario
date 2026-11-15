@@ -116,6 +116,20 @@ test('Hoy: sin API key sugiere un outfit por reglas con el clima simulado', asyn
   await expect(cards.first().getByTestId('source-badge')).toHaveText('reglas')
   await expect(cards.first()).toContainText('Polo e2e')
 
+  // Fase 5: 👎 con «Muy formal», la calificación se guarda y sobrevive a una recarga.
+  await cards.first().getByRole('button', { name: 'No me gusta' }).click()
+  await cards.first().getByRole('button', { name: 'Muy formal' }).click()
+  await cards.first().getByRole('button', { name: 'Guardar calificación' }).click()
+  await expect(cards.first().getByTestId('rating-saved')).toContainText('👎 No me gusta · Muy formal')
+  await page.reload()
+  await page.getByRole('link', { name: /Ajustes/ }).click()
+  await expect(page.getByTestId('taste-counts')).toContainText('Calificaciones: 1 (0 me gusta, 1 no me gusta)')
+  await page.getByRole('link', { name: /Hoy/ }).click()
+  await expect(page.getByTestId('weather-card')).toContainText('22°')
+  await page.getByRole('button', { name: 'Sugerir outfits' }).click()
+  await expect(cards.first()).toBeVisible()
+  await expect(cards.first()).toContainText('Polo e2e')
+
   // «Me lo pongo» -> aparece en Uso (historial y %), y sobrevive a una recarga.
   await cards.first().getByRole('button', { name: 'Me lo pongo' }).click()
   await expect(cards.first().getByText('Puesto hoy ✓')).toBeVisible()

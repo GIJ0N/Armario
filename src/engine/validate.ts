@@ -1,5 +1,5 @@
 import type { Garment } from '../db/types'
-import { buildPlan, comboKey, spreadOf, type Plan } from './plan'
+import { buildPlan, comboKey, hasAvoidedPair, spreadOf, type Plan } from './plan'
 import type { EngineContext, OutfitSuggestion, OutfitValidation } from './types'
 
 export interface ValidateOptions {
@@ -54,6 +54,10 @@ export function validateOutfit(
 
   if (plan.priorityIds.size > 0 && !core.some((g) => plan.priorityIds.has(g.id))) {
     errors.push('Include at least one priority garment (least-worn).')
+  }
+
+  if (hasAvoidedPair(ids, plan.byId, plan.avoidPairs)) {
+    errors.push('This outfit combines garments the user disliked together; pick a different combination.')
   }
 
   const key = comboKey(ids, plan.byId)

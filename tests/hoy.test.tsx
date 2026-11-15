@@ -174,4 +174,47 @@ describe('pantalla Hoy', () => {
     expect(screen.queryByTestId('outfit-card')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Otras opciones' })).not.toBeInTheDocument()
   })
+
+  it('👎 abre los motivos, guarda la calificación, la muestra y permite cambiarla', async () => {
+    stubNetwork()
+    const repo = fakeRepo()
+    renderHoy(repo)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sugerir outfits' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'Sugerir outfits' }))
+    const card = (await screen.findAllByTestId('outfit-card'))[0]
+    await userEvent.click(within(card).getByRole('button', { name: 'No me gusta' }))
+    for (const label of ['Muy formal', 'Muy casual', 'No me gustan los colores', 'La silueta no me convence', 'No va con el clima', 'Muy repetido', 'Incómodo']) {
+      expect(within(card).getByRole('button', { name: label })).toBeInTheDocument()
+    }
+    await userEvent.click(within(card).getByRole('button', { name: 'Muy formal' }))
+    await userEvent.type(within(card).getByLabelText('Comentario (opcional)'), 'demasiado serio')
+    await userEvent.click(within(card).getByRole('button', { name: 'Guardar calificación' }))
+    expect(await within(card).findByTestId('rating-saved')).toHaveTextContent('👎 No me gusta · Muy formal')
+    expect(repo.ratings).toHaveLength(1)
+    expect(repo.ratings[0]).toMatchObject({ outfitId: repo.saved[0].id, rating: 'dislike', tags: ['too_formal'], comment: 'demasiado serio' })
+
+    // Cambiar a 👍 con otros motivos reemplaza la calificación.
+    await userEvent.click(within(card).getByRole('button', { name: 'Me gusta' }))
+    expect(within(card).getByRole('button', { name: 'Combinación nueva' })).toBeInTheDocument()
+    await userEvent.click(within(card).getByRole('button', { name: 'Cómodo' }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Guardar calificación' }))
+    await waitFor(() => expect(within(card).getByTestId('rating-saved')).toHaveTextContent('👍 Me gusta · Cómodo'))
+    expect(repo.ratings).toHaveLength(1)
+    expect(repo.ratings[0]).toMatchObject({ rating: 'like', tags: ['comfortable'] })
+  })
+
+  it('a la calificación 10 actualiza el perfil de gusto en segundo plano (sin IA, por reglas)', async () => {
+    stubNetwork()
+    const repo = fakeRepo()
+    renderHoy(repo)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sugerir outfits' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'Sugerir outfits' }))
+    await screen.findAllByTestId('outfit-card')
+    for (let i = 0; i < 9; i++) await repo.feedback.rate((await repo.outfits.create({ garment_ids: ['top-polo-marino'], occasion: 'casual', weather_snapshot: null, reasoning: '', source: 'rules' })).id, 'dislike', ['too_formal'], '', new Date(Date.now() - 60_000 + i))
+    const card = (await screen.findAllByTestId('outfit-card'))[0]
+    await userEvent.click(within(card).getByRole('button', { name: 'No me gusta' }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Muy formal' }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Guardar calificación' }))
+    await waitFor(async () => expect((await repo.taste.get())?.summary).toContain('formalidad más bajo'))
+  })
 })

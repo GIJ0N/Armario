@@ -5,6 +5,9 @@ import {
   STYLIST_JSON_SCHEMA,
   STYLIST_SYSTEM,
   stylistResponseSchema,
+  garmentAttributes,
+  MAX_LIKED_EXAMPLES,
+  type LikedExample,
   type StylistCandidate,
   type StylistResponse,
 } from '../ai/prompts/stylist'
@@ -43,6 +46,17 @@ function candidatesFor(plan: Plan): StylistCandidate[] {
     }))
 }
 
+/** Hasta 5 outfits con «me gusta» como ejemplos, solo con atributos (sin fotos ni ids). */
+function likedExamples(plan: Plan): LikedExample[] {
+  return (plan.ctx.likedOutfits ?? []).slice(0, MAX_LIKED_EXAMPLES).map((o) => ({
+    garments: o.garmentIds.flatMap((id) => {
+      const g = plan.byId.get(id)
+      return g ? [garmentAttributes(g)] : []
+    }),
+    reasoning: o.reasoning,
+  }))
+}
+
 function promptFor(plan: Plan, errors?: string[]) {
   const { ctx, filter } = plan
   const w = ctx.weather
@@ -64,6 +78,8 @@ function promptFor(plan: Plan, errors?: string[]) {
       candidates: candidatesFor(plan),
       recentOutfits: ctx.recentOutfits.map((o) => o.garmentIds),
       errors,
+      tasteProfile: ctx.tasteSummary,
+      likedExamples: likedExamples(plan),
     }),
   }
 }

@@ -1,6 +1,7 @@
 export * from './types'
 export * from './occasions'
 export * from './filter'
+export * from './taste'
 export * from './rotation'
 export * from './plan'
 export * from './validate'

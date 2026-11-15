@@ -2,6 +2,7 @@ import type { Garment } from '../db/types'
 import { daysBetween } from './dates'
 import { filterGarments, type FilterResult } from './filter'
 import { rankByRotation, type RotationResult } from './rotation'
+import { pairKey, tasteTightens } from './taste'
 import type { EngineContext } from './types'
 
 /** Un outfit no puede repetirse dentro de esta ventana (días). */
@@ -20,6 +21,22 @@ export interface Plan {
   recentKeys: Set<string>
   /** Hay al menos una combinación base posible. */
   hasCombos: boolean
+  /** Pares con «no me gusta» que se rechazan en validación (vacío si no hay alternativas suficientes). */
+  avoidPairs: Set<string>
+  /** El gusto endureció el rango de formalidad en este plan. */
+  tasteApplied: boolean
+}
+
+/** Mínimo de combinaciones sin pares evitados para exigir evitarlos. */
+export const MIN_CLEAN_COMBOS = 3
+
+/** ¿Algún par de prendas (no accesorios) del outfit está en `pairs`? */
+export function hasAvoidedPair(ids: string[], byId: Map<string, Garment>, pairs: Set<string> | string[]): boolean {
+  const set = pairs instanceof Set ? pairs : new Set(pairs)
+  if (set.size === 0) return false
+  const core = [...new Set(ids)].filter((id) => byId.get(id) && byId.get(id)!.category !== 'accessory')
+  for (let i = 0; i < core.length; i++) for (let j = i + 1; j < core.length; j++) if (set.has(pairKey(core[i], core[j]))) return true
+  return false
 }
 
 /** Clave de un outfit: ids de prendas no accesorio, ordenados. */
@@ -81,9 +98,8 @@ export function forEachBaseCombo(
   }
 }
 
-/** Pasos 1 y 2 combinados con lo necesario para validar y componer. */
-export function buildPlan(ctx: EngineContext): Plan {
-  const filter = filterGarments(ctx)
+function buildPlanWith(ctx: EngineContext, applyTaste: boolean): Plan {
+  const filter = filterGarments(ctx, applyTaste ? ctx.taste : undefined)
   const eligible = ctx.garments.filter((g) => filter.eligibleIds.has(g.id))
   const rotation = rankByRotation(eligible, ctx.wears, ctx.today)
   const byId = new Map(ctx.garments.map((g) => [g.id, g]))
@@ -95,14 +111,38 @@ export function buildPlan(ctx: EngineContext): Plan {
       })
       .map((o) => comboKey(o.garmentIds, byId)),
   )
-  const plan: Plan = { ctx, filter, rotation, byId, priorityIds: new Set(), recentKeys, hasCombos: false }
+  const plan: Plan = {
+    ctx,
+    filter,
+    rotation,
+    byId,
+    priorityIds: new Set(),
+    recentKeys,
+    hasCombos: false,
+    avoidPairs: new Set(),
+    tasteApplied: applyTaste && tasteTightens(ctx.occasion, ctx.taste),
+  }
   if (filter.missing.length === 0) {
     const feasible = new Set<string>()
+    const disliked = new Set(ctx.taste?.dislikedPairs ?? [])
+    let clean = 0
     forEachBaseCombo(plan, (items) => {
       plan.hasCombos = true
       items.forEach((g) => feasible.add(g.id))
+      if (disliked.size > 0 && clean < MIN_CLEAN_COMBOS && !hasAvoidedPair(items.map((g) => g.id), byId, disliked)) clean++
     })
     plan.priorityIds = new Set([...rotation.priorityIds].filter((id) => feasible.has(id)))
+    if (clean >= MIN_CLEAN_COMBOS) plan.avoidPairs = disliked
   }
+  return plan
+}
+
+/**
+ * Pasos 1 y 2 combinados con lo necesario para validar y componer.
+ * Si el gusto endurece la formalidad y deja sin outfits posibles, se descarta ese endurecimiento.
+ */
+export function buildPlan(ctx: EngineContext): Plan {
+  const plan = buildPlanWith(ctx, true)
+  if (plan.tasteApplied && (plan.filter.missing.length > 0 || !plan.hasCombos)) return buildPlanWith(ctx, false)
   return plan
 }

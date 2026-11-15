@@ -37,4 +37,8 @@ SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción
 
 ## Estado
 
-Fase actual: 4 completada; siguiente: 5
+Fase actual: 5 completada; siguiente: 6
+
+## Gusto
+
+Cada outfit se califica con 👍/👎 y motivos (`feedback`, una por outfit). El gusto actúa de dos formas: (1) determinista, sin IA: `src/engine/taste.ts` calcula `TastePreferences` (sesgo de formalidad, pares con «no me gusta» en ≥ 2 outfits, prendas con «me gusta») que endurecen el rango de formalidad, se rechazan en validación y puntúan en el compositor; (2) texto: cada 10 calificaciones nuevas `src/taste/` regenera el perfil con la IA (`src/ai/prompts/tasteProfile.ts`, solo atributos, nunca fotos) o con reglas si no hay IA o falla. «Reiniciar gusto» borra el perfil y hace que las calificaciones anteriores dejen de influir, pero las conserva.

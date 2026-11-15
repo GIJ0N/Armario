@@ -1,7 +1,7 @@
 import { FORMALITY_LABELS, OCCASION_LABELS } from '../db/labels'
 import type { Garment } from '../db/types'
 import { OCCASION_RULES } from './occasions'
-import { forEachBaseCombo, spreadOf, type Plan } from './plan'
+import { forEachBaseCombo, hasAvoidedPair, spreadOf, type Plan } from './plan'
 import type { OutfitSuggestion } from './types'
 import { validateOutfit } from './validate'
 
@@ -10,6 +10,10 @@ export const NEUTRAL_COLORS = ['negro', 'blanco', 'gris', 'beige', 'azul marino'
 export const MAX_NON_NEUTRAL_COLORS = 3
 /** Prendas por espacio que se exploran (las más urgentes por rotación) para acotar el tiempo. */
 export const SLOT_SEARCH_LIMIT = 25
+/** Puntos por nivel de formalidad por sesgo de gusto (-1..1). */
+export const TASTE_FORMALITY_WEIGHT = 40
+export const DISLIKED_PAIR_PENALTY = 60
+export const LIKED_BONUS = 3
 
 const norm = (s: string) =>
   s
@@ -54,6 +58,22 @@ function scoreCombo(plan: Plan, items: Garment[], rankOf: Map<string, number>): 
   const bottom = items.find((g) => g.category === 'bottom')!
   if (!OCCASION_RULES[plan.ctx.occasion].relaxSilhouette && top.fit === bottom.fit && top.fit !== 'regular') score -= 4
   if (plan.filter.outerwearAdvice === 'recommended' && items.some((g) => g.category === 'outerwear')) score += 6
+  score += tasteScore(plan, items)
+  return score
+}
+
+/** Fase 5: formalidad según el sesgo, pares con «no me gusta» y pequeño bono a prendas con «me gusta». */
+function tasteScore(plan: Plan, items: Garment[]): number {
+  const taste = plan.ctx.taste
+  if (!taste) return 0
+  let score = 0
+  if (plan.ctx.occasion !== 'gym') {
+    const mean = items.reduce((s, g) => s + g.formality, 0) / items.length
+    score += taste.formalityBias * (mean - 3) * TASTE_FORMALITY_WEIGHT
+  }
+  if (hasAvoidedPair(items.map((g) => g.id), plan.byId, taste.dislikedPairs)) score -= DISLIKED_PAIR_PENALTY
+  const liked = new Set(taste.likedGarmentIds)
+  score += items.filter((g) => liked.has(g.id)).length * LIKED_BONUS
   return score
 }
 

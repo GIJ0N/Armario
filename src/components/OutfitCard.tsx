@@ -1,4 +1,13 @@
-import { CATEGORY_LABELS, type Garment } from '../db'
+import { useState } from 'react'
+import {
+  CATEGORY_LABELS,
+  DISLIKE_TAGS,
+  LIKE_TAGS,
+  tagLabel,
+  type FeedbackEntry,
+  type Garment,
+  type Rating,
+} from '../db'
 import type { SuggestedOutfit } from '../engine'
 import { GarmentPhoto } from './GarmentPhoto'
 
@@ -12,9 +21,117 @@ interface OutfitCardProps {
   onUndo?: () => void
   worn?: boolean
   busy?: boolean
+  /** Calificación guardada de este outfit (fase 5). */
+  feedback?: FeedbackEntry | null
+  /** Si se omite, la tarjeta no muestra 👍 / 👎. Debe rechazar si no se pudo guardar. */
+  onRate?: (rating: Rating, tags: string[], comment: string) => Promise<void>
 }
 
-export function OutfitCard({ outfit, garments, onWear, onUndo, worn = false, busy = false }: OutfitCardProps) {
+const RATING_TEXT: Record<Rating, string> = { like: '👍 Me gusta', dislike: '👎 No me gusta' }
+
+function RatingPanel({ feedback, onRate }: { feedback: FeedbackEntry | null; onRate: NonNullable<OutfitCardProps['onRate']> }) {
+  const [picking, setPicking] = useState<Rating | null>(null)
+  const [tags, setTags] = useState<string[]>([])
+  const [comment, setComment] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function open(rating: Rating) {
+    const same = feedback?.rating === rating
+    setTags(same ? feedback.tags : [])
+    setComment(same ? feedback.comment : '')
+    setError(null)
+    setPicking(rating)
+  }
+
+  async function save() {
+    if (!picking) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onRate(picking, tags, comment)
+      setPicking(null)
+    } catch {
+      setError('No se pudo guardar tu calificación.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const options = picking === 'like' ? LIKE_TAGS : DISLIKE_TAGS
+  return (
+    <div className="rating" data-testid="rating">
+      {feedback && !picking && (
+        <p className="rating-saved" data-testid="rating-saved">
+          Tu calificación: {RATING_TEXT[feedback.rating]}
+          {feedback.tags.length > 0 && ` · ${feedback.tags.map((t) => tagLabel(feedback.rating, t)).join(', ')}`}
+        </p>
+      )}
+      {!picking && (
+        <div className="rating-buttons">
+          {(['like', 'dislike'] as const).map((r) => (
+            <button
+              key={r}
+              type="button"
+              className={`btn btn-inline${feedback?.rating === r ? ' btn-selected' : ''}`}
+              aria-pressed={feedback?.rating === r}
+              aria-label={r === 'like' ? 'Me gusta' : 'No me gusta'}
+              onClick={() => open(r)}
+            >
+              {r === 'like' ? '👍' : '👎'}
+            </button>
+          ))}
+        </div>
+      )}
+      {picking && (
+        <div className="rating-form">
+          <p className="rating-title">{RATING_TEXT[picking]}: ¿por qué? (opcional)</p>
+          <div className="chips" role="group" aria-label="Motivos">
+            {options.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={`chip${tags.includes(t) ? ' chip-active' : ''}`}
+                aria-pressed={tags.includes(t)}
+                onClick={() => setTags((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]))}
+              >
+                {tagLabel(picking, t)}
+              </button>
+            ))}
+          </div>
+          <label className="field">
+            <span>Comentario (opcional)</span>
+            <input value={comment} maxLength={200} onChange={(e) => setComment(e.target.value)} />
+          </label>
+          <div className="rating-actions">
+            <button type="button" className="btn btn-inline" disabled={saving} onClick={() => setPicking(null)}>
+              Cancelar
+            </button>
+            <button type="button" className="btn btn-primary btn-inline" disabled={saving} onClick={() => void save()}>
+              Guardar calificación
+            </button>
+          </div>
+          {error && (
+            <p role="alert" className="form-error">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function OutfitCard({
+  outfit,
+  garments,
+  onWear,
+  onUndo,
+  worn = false,
+  busy = false,
+  feedback = null,
+  onRate,
+}: OutfitCardProps) {
   const items = outfit.garmentIds.map((id) => garments.get(id)).filter((g): g is Garment => !!g)
   return (
     <li className="outfit-card" data-testid="outfit-card">
@@ -37,7 +154,7 @@ export function OutfitCard({ outfit, garments, onWear, onUndo, worn = false, bus
         })}
       </ul>
       <p className="outfit-reasoning">{outfit.reasoning}</p>
-      {/* Fase 5: aquí irán también me gusta / no me gusta. */}
+      {onRate && <RatingPanel feedback={feedback} onRate={onRate} />}
       <div className="outfit-actions">
         {onWear &&
           (worn ? (

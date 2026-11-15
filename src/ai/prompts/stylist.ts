@@ -26,6 +26,40 @@ Reasoning: for each outfit write ONE line in Spanish (maximum 220 characters), s
 
 Output JSON: {"outfits": [{"garment_ids": ["..."], "reasoning": "..."}]} with exactly 3 outfits.`
 
+/** Atributos de una prenda para ejemplos y perfil de gusto: nunca fotos, rutas ni ids. */
+export interface GarmentAttributes {
+  category: string
+  subcategory: string
+  colors: string[]
+  pattern: string
+  material: string
+  fit: string
+  formality: number
+  warmth: number
+  is_statement: boolean
+}
+
+export function garmentAttributes(g: GarmentAttributes): GarmentAttributes {
+  return {
+    category: g.category,
+    subcategory: g.subcategory,
+    colors: g.colors,
+    pattern: g.pattern,
+    material: g.material,
+    fit: g.fit,
+    formality: g.formality,
+    warmth: g.warmth,
+    is_statement: g.is_statement,
+  }
+}
+
+export interface LikedExample {
+  garments: GarmentAttributes[]
+  reasoning: string
+}
+
+export const MAX_LIKED_EXAMPLES = 5
+
 export interface StylistCandidate {
   id: string
   category: string
@@ -62,7 +96,7 @@ export interface StylistPromptInput {
   /** Fase 5: perfil de gusto en texto. */
   tasteProfile?: string
   /** Fase 5: outfits con «me gusta» como ejemplos. */
-  likedExamples?: { garment_ids: string[]; reasoning: string }[]
+  likedExamples?: LikedExample[]
 }
 
 /** Mensaje de usuario del estilista: solo atributos en JSON, sin fotos ni rutas de fotos. */

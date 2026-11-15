@@ -3,10 +3,11 @@ import { useAi } from '../ai/AiProviderContext'
 import type { AiProvider } from '../ai/provider'
 import { OutfitCard } from '../components/OutfitCard'
 import { useRepository } from '../components/RepositoryContext'
-import { OCCASIONS, OCCASION_LABELS, type Garment, type Occasion } from '../db'
+import { OCCASIONS, OCCASION_LABELS, type FeedbackEntry, type Garment, type Occasion, type Rating } from '../db'
 import { daysBetween, NO_REPEAT_DAYS, suggestOutfits, type SuggestedOutfit, type Weather } from '../engine'
 import { localDateString } from '../lib/date'
 import { useSettings } from '../settings'
+import { loadTaste, maybeUpdateTasteProfile } from '../taste'
 import {
   loadWeather,
   WEATHER_PRESETS,
@@ -50,6 +51,7 @@ export default function HoyPage() {
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null)
   const [worn, setWorn] = useState<Set<string>>(new Set())
   const [wearBusy, setWearBusy] = useState(false)
+  const [ratings, setRatings] = useState<Map<string, FeedbackEntry>>(new Map())
   const runId = useRef(0)
   /** Outfits ya mostrados en esta sesión (solo en memoria): «Otras opciones» no los repite. */
   const shown = useRef<string[][]>([])
@@ -96,7 +98,22 @@ export default function HoyPage() {
           provider = undefined
         }
       }
-      const res = await suggestOutfits({ occasion, weather, garments, wears, recentOutfits, today }, provider)
+      // El gusto nunca debe impedir sugerir: si falla, se sugiere sin él.
+      const taste = await loadTaste(repo, garments).catch(() => null)
+      const res = await suggestOutfits(
+        {
+          occasion,
+          weather,
+          garments,
+          wears,
+          recentOutfits,
+          today,
+          ...(taste
+            ? { taste: taste.preferences, tasteSummary: taste.summary, likedOutfits: taste.likedOutfits }
+            : {}),
+        },
+        provider,
+      )
       const warnings = [...res.warnings]
       const outfits: ShownOutfit[] = res.outfits.map((o) => ({ ...o, outfitId: null }))
       try {
@@ -142,6 +159,22 @@ export default function HoyPage() {
     } finally {
       setWearBusy(false)
     }
+  }
+
+  async function rate(o: ShownOutfit, rating: Rating, tags: string[], comment: string) {
+    if (!o.outfitId) throw new Error('Outfit sin guardar')
+    const entry = await repo.feedback.rate(o.outfitId, rating, tags, comment)
+    setRatings((prev) => new Map(prev).set(o.outfitId!, entry))
+    // Perfil de gusto en segundo plano: no bloquea la interfaz ni muestra errores.
+    let provider: AiProvider | undefined
+    if (ai.configured) {
+      try {
+        provider = ai.getProvider()
+      } catch {
+        provider = undefined
+      }
+    }
+    void maybeUpdateTasteProfile(repo, provider)
   }
 
   return (
@@ -262,6 +295,8 @@ export default function HoyPage() {
                 busy={wearBusy}
                 onWear={o.outfitId ? () => void toggleWear(o, true) : undefined}
                 onUndo={() => void toggleWear(o, false)}
+                feedback={o.outfitId ? (ratings.get(o.outfitId) ?? null) : null}
+                onRate={o.outfitId ? (rating, tags, comment) => rate(o, rating, tags, comment) : undefined}
               />
             ))}
           </ul>

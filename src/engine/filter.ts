@@ -1,6 +1,7 @@
 import { OCCASION_LABELS } from '../db/labels'
 import { CATEGORIES, type Category, type Garment } from '../db/types'
 import { formalityRange, type Range } from './occasions'
+import { tasteFormalityRange, type TastePreferences } from './taste'
 import type { EngineContext, OuterwearAdvice, Weather } from './types'
 
 export interface WeatherBand {
@@ -63,7 +64,11 @@ const SLOT_NOUN: Record<Category, string> = {
 }
 
 /** Paso 1: prendas elegibles por espacio según estado, clima y formalidad. */
-export function filterGarments(ctx: Pick<EngineContext, 'occasion' | 'weather' | 'garments'>): FilterResult {
+export function filterGarments(
+  ctx: Pick<EngineContext, 'occasion' | 'weather' | 'garments'>,
+  /** Preferencias de gusto que endurecen la formalidad de superiores e inferiores (fase 5). */
+  taste?: TastePreferences,
+): FilterResult {
   const { occasion, weather } = ctx
   const band = weatherBand(weather)
   const rainy = isRainy(weather)
@@ -79,8 +84,11 @@ export function filterGarments(ctx: Pick<EngineContext, 'occasion' | 'weather' |
 
   for (const g of ctx.garments) {
     if (g.status !== 'active') continue
-    const fits =
-      inRange(g.formality, formalityRange(occasion, g.category)) || g.occasions.includes(occasion)
+    // Con el gusto aplicado el rango manda: la etiqueta de ocasión ya no abre la puerta a prendas más formales.
+    const tasteRange = tasteFormalityRange(occasion, g.category, taste)
+    const fits = tasteRange
+      ? inRange(g.formality, tasteRange)
+      : inRange(g.formality, formalityRange(occasion, g.category)) || g.occasions.includes(occasion)
     if (!fits) continue
     formalityOk[g.category]++
     const wr = warmthRange(g.category)
