@@ -14,6 +14,7 @@ import {
   type Garment,
   type GarmentData,
   type Occasion,
+  type Status,
 } from '../db'
 import type { TaggedGarment } from '../ai/provider'
 import { resizeImage } from '../lib/image'
@@ -37,9 +38,11 @@ interface Props {
   suggestion?: { id: number; values: TaggedGarment } | null
   /** Contenido (estado de la IA) que se muestra bajo la foto. */
   aiSlot?: ReactNode
+  /** Estado fijo (p. ej. «candidata» en Comprar): oculta el selector de estado. */
+  fixedStatus?: Status
 }
 
-export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, suggestion, aiSlot }: Props) {
+export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, suggestion, aiSlot, fixedStatus }: Props) {
   const [category, setCategory] = useState<string>(initial?.category ?? '')
   const [subcategory, setSubcategory] = useState(initial?.subcategory ?? '')
   const [colors, setColors] = useState(initial?.colors.join(', ') ?? '')
@@ -50,7 +53,7 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
   const [warmth, setWarmth] = useState(initial ? String(initial.warmth) : '')
   const [occasions, setOccasions] = useState<Occasion[]>(initial?.occasions ?? [])
   const [isStatement, setIsStatement] = useState(initial?.is_statement ?? false)
-  const [status, setStatus] = useState<string>(initial?.status ?? 'active')
+  const [status, setStatus] = useState<string>(fixedStatus ?? initial?.status ?? 'active')
   const [notes, setNotes] = useState(initial?.notes ?? '')
 
   const [photo, setPhoto] = useState<{ blob: Blob; url: string } | null>(null)
@@ -122,7 +125,7 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
       warmth: Number(warmth),
       occasions,
       is_statement: isStatement,
-      status,
+      status: fixedStatus ?? status,
       notes,
     })
     if (!parsed.success) return setError('Revisa los datos de la prenda.')
@@ -267,14 +270,16 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
         <input type="checkbox" checked={isStatement} onChange={(e) => setIsStatement(e.target.checked)} />
         Es prenda protagonista (llamativa)
       </label>
-      <label className="field">
-        <span>Estado</span>
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-          ))}
-        </select>
-      </label>
+      {!fixedStatus && (
+        <label className="field">
+          <span>Estado</span>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="field">
         <span>Notas</span>
         <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />

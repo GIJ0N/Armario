@@ -90,7 +90,7 @@ export function forEachBaseCombo(
             if (statements + Number(o.is_statement) > 1) continue
           }
           const items = o ? [t, b, s, o] : [t, b, s]
-          if (plan.recentKeys.has(comboKey(items.map((g) => g.id), plan.byId))) continue
+          if (plan.recentKeys.size > 0 && plan.recentKeys.has(comboKey(items.map((g) => g.id), plan.byId))) continue
           if (visit(items) === false) return
         }
       }

@@ -46,3 +46,9 @@ Fase actual: 6 completada (incluye 5); siguiente: 7
 ## Gusto
 
 Cada outfit se califica con 👍/👎 y motivos (`feedback`, una por outfit). El gusto actúa de dos formas: (1) determinista, sin IA: `src/engine/taste.ts` calcula `TastePreferences` (sesgo de formalidad, pares con «no me gusta» en ≥ 2 outfits, prendas con «me gusta») que endurecen el rango de formalidad, se rechazan en validación y puntúan en el compositor; (2) texto: cada 10 calificaciones nuevas `src/taste/` regenera el perfil con la IA (`src/ai/prompts/tasteProfile.ts`, solo atributos, nunca fotos) o con reglas si no hay IA o falla. «Reiniciar gusto» borra el perfil y hace que las calificaciones anteriores dejen de influir, pero las conserva.
+
+## Compras
+
+- `src/purchase/`: evaluador de compras, solo reglas y determinista. `duplicates` (≥2 activas con misma categoría, subcategoría, color principal y formalidad), `simulate` (outfits válidos que incluyen la candidata, por ocasión y en clima templado/calor/frío; sin prioridad de rotación ni repetidos), `verdict` (umbrales `buyMinOutfits` y `buyMinOccasions` en Ajustes/localStorage), `gaps` y `complements` (el motor simula cada complemento y calcula «desbloquea N»), `wardrobeGaps` («Qué le falta», bajo demanda en Uso).
+- La IA (`src/ai/prompts/purchaseGaps.ts`) solo redacta la explicación y propone complementos por atributos; sus números se ignoran, se recalculan con el motor y se eliminan enlaces y precios. Sin IA o con error se usa la versión por reglas.
+- Candidatas = `garments` con `status = candidate` (no entran al motor de Hoy). `repo.purchases` guarda la evaluación (migración 0004: veredicto `with_complements` y columna `details` JSON). «Lo compré» → `active`; «Descartar» borra prenda y foto tras el diálogo de confirmación.

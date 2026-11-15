@@ -41,7 +41,7 @@ interface Candidate {
 
 const name = (g: Garment) => (g.subcategory || g.category).toLowerCase()
 
-function scoreCombo(plan: Plan, items: Garment[], rankOf: Map<string, number>): number {
+export function scoreCombo(plan: Plan, items: Garment[], rankOf: Map<string, number>): number {
   const n = rankOf.size || 1
   const priority = items.filter((g) => plan.priorityIds.has(g.id)).length
   let score = priority * 100
