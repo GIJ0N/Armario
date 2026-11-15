@@ -159,3 +159,31 @@ body { min-height: 100dvh; -webkit-tap-highlight-color: transparent; }
   display: inline-block; margin-bottom: 12px; padding: 2px 10px; border-radius: 999px;
   background: #374151; color: #fff; font-size: 0.8rem;
 }
+
+/* Fase 7: evaluador de compras */
+.chip-static { cursor: default; min-height: 32px; display: inline-flex; align-items: center; font-size: 0.85rem; background: #f3f4f6; }
+.purchase-result { display: flex; flex-direction: column; gap: 10px; }
+.purchase-head { display: flex; align-items: center; gap: 12px; }
+.purchase-head .section-title { margin: 0; }
+.purchase-thumb { width: 64px; height: 64px; }
+.purchase-sub { margin: 2px 0 0; font-size: 0.85rem; }
+.verdict-box { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.verdict { display: inline-block; font-weight: 700; font-size: 1.4rem; line-height: 1.2; padding: 10px 18px; border-radius: 12px; }
+.verdict-buy { background: #dcfce7; color: #166534; border: 2px solid #16a34a; }
+.verdict-with_complements { background: #fef3c7; color: #92400e; border: 2px solid #d97706; }
+.verdict-skip { background: #fee2e2; color: #991b1b; border: 2px solid #dc2626; }
+.verdict-small { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; border-width: 1px; }
+.verdict-summary { margin: 0; font-size: 1rem; }
+.verdict-chips { margin: 0; padding: 0; list-style: none; }
+.duplicate-warning { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 12px; padding: 10px; color: #7f1d1d; }
+.duplicate-warning .history-thumbs { margin-top: 8px; }
+.example-list, .complement-list, .gap-suggestions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.gap-suggestions { margin-top: 12px; }
+.gap-list { margin: 0; padding-left: 20px; font-size: 0.9rem; }
+.purchase-explanation { margin: 0; }
+.complement-card { display: flex; flex-direction: column; gap: 2px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px 12px; }
+.complement-reason { font-size: 0.85rem; }
+.complement-unlocks { color: #166534; font-weight: 600; font-size: 0.9rem; }
+.purchase-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.wish-row { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.wish-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }

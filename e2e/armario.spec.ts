@@ -233,3 +233,51 @@ test('sin conexión: la app instalada abre con su armario', async ({ page, conte
   expect(errors).toEqual([])
   await context.setOffline(false)
 })
+
+test('Comprar: evaluar una candidata sin API key, ver el veredicto y comprarla', async ({ page }) => {
+  for (const [category, name] of [
+    ['top', 'Polo base'],
+    ['bottom', 'Chinos base'],
+    ['shoes', 'Mocasines base'],
+  ] as const) {
+    await page.goto('./#/agregar')
+    await page.getByLabel('Categoría *').selectOption(category)
+    await page.getByLabel('Subcategoría').fill(name)
+    await page.getByLabel('Formalidad *').selectOption('3')
+    await page.getByLabel('Abrigo *').selectOption('2')
+    await page.getByRole('button', { name: 'Guardar prenda' }).click()
+    await expect(page.getByText(name)).toBeVisible()
+  }
+
+  await page.goto('./#/comprar')
+  await expect(page.getByRole('heading', { level: 1, name: 'Comprar' })).toBeVisible()
+  await page.getByLabel('Categoría *').selectOption('top')
+  await page.getByLabel('Subcategoría').fill('Camisa candidata')
+  await page.getByLabel('Colores (separados por coma)').fill('azul marino')
+  await page.getByLabel('Formalidad *').selectOption('3')
+  await page.getByLabel('Abrigo *').selectOption('2')
+  await page.getByRole('button', { name: 'Guardar y evaluar' }).click()
+
+  await expect(page.getByTestId('verdict-badge')).toBeVisible()
+  await expect(page.getByTestId('outfit-summary')).toContainText(/Formaría \d+ outfits? en \d+ ocasion/)
+  await expect(page.getByTestId('example-outfit').first()).toBeVisible()
+
+  // Queda en la lista de deseos aunque se recargue.
+  await page.reload()
+  await page.getByRole('tab', { name: /Lista de deseos/ }).click()
+  await expect(page.getByRole('list', { name: 'Lista de deseos' })).toContainText('Camisa candidata')
+  await page.getByRole('button', { name: 'Ver evaluación de Camisa candidata' }).click()
+  await expect(page.getByTestId('verdict-badge')).toBeVisible()
+
+  // «Lo compré»: entra al armario normal.
+  await page.getByRole('button', { name: 'Lo compré' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Armario' })).toBeVisible()
+  await expect(page.getByText('Camisa candidata')).toBeVisible()
+  await expect(page.getByTestId('count')).toHaveText('4 prendas')
+
+  // Uso: «Qué le falta» se calcula bajo demanda.
+  await page.getByRole('link', { name: /Uso/ }).click()
+  await expect(page.getByTestId('wardrobe-gap')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Calcular' }).click()
+  await expect(page.getByTestId('wardrobe-gap').first()).toContainText('desbloquearía')
+})

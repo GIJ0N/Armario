@@ -19,6 +19,7 @@ import type { Repository } from '../src/db'
 import App from '../src/App'
 import { fakeRepo } from './fixtures/fakeRepo'
 import { memoryFeedback } from './fixtures/memoryFeedback'
+import { memoryPurchases } from './fixtures/memoryPurchases'
 
 // jsdom no decodifica imágenes: simulamos el redimensionado.
 vi.mock('../src/lib/image', () => ({
@@ -38,6 +39,7 @@ function createFakeRepo(): Repository & { items: Garment[] } {
     items,
     feedback: mem.feedback,
     taste: mem.taste,
+    purchases: memoryPurchases(() => items).purchases,
     wears: fakeRepo(items).wears,
     outfits: {
       create: async (input) => {

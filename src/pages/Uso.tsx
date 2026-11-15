@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { WardrobeGaps } from '../components/WardrobeGaps'
 import { GarmentPhoto } from '../components/GarmentPhoto'
 import { useRepository } from '../components/RepositoryContext'
 import { CATEGORY_LABELS, OCCASION_LABELS, USAGE_WINDOW_DAYS, type Garment, type WearEntry, type WearStats } from '../db'
@@ -183,6 +184,8 @@ export default function UsoPage() {
           ))}
         </div>
       )}
+
+      <WardrobeGaps garments={garments} />
     </section>
   )
 }

@@ -105,3 +105,61 @@ export interface TasteProfile {
   /** ISO: último «Reiniciar gusto» ('' si nunca). */
   resetAt: string
 }
+
+export const VERDICTS = ['buy', 'with_complements', 'skip'] as const
+export type Verdict = (typeof VERDICTS)[number]
+
+/** Prenda hipotética (complemento) descrita solo por atributos; la numeración «desbloquea» la calcula el motor. */
+export interface StoredComplement {
+  category: Category
+  subcategory: string
+  colors: string[]
+  formality: number
+  warmth: number
+  fit: Fit
+  material?: string
+  pattern?: string
+  /** Texto en español, p. ej. «Zapato de vestir negro, formalidad 4». */
+  label: string
+  /** Motivo (solo con IA); texto sin enlaces. */
+  reason?: string
+  /** Outfits adicionales con la candidata que desbloquea, calculados por el motor. */
+  unlocks: number
+  source: 'rules' | 'ai'
+}
+
+export interface StoredExample {
+  occasion: Occasion
+  garmentIds: string[]
+}
+
+/** Resumen guardado de una evaluación (JSON en `details`). */
+export interface EvaluationDetails {
+  perOccasion: Partial<Record<Occasion, number>>
+  occasionCount: number
+  partnerCount: number
+  duplicateIds: string[]
+  examples: StoredExample[]
+  explanation: string
+  /** Aviso en español (p. ej. «sin IA»); '' si no hay. */
+  note: string
+  usedAi: boolean
+}
+
+export interface PurchaseEvaluation {
+  garmentId: string
+  verdict: Verdict
+  outfitCount: number
+  gaps: string[]
+  complements: StoredComplement[]
+  details: EvaluationDetails
+  /** ISO */
+  createdAt: string
+}
+
+export type NewPurchaseEvaluation = Omit<PurchaseEvaluation, 'createdAt'> & { createdAt?: string }
+
+export interface CandidateEntry {
+  garment: Garment
+  evaluation: PurchaseEvaluation | null
+}

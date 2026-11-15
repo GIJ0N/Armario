@@ -30,7 +30,7 @@ describe('migraciones', () => {
     expect(tables).toEqual(
       ['feedback', 'garments', 'outfits', 'purchase_evaluations', 'taste_profile', 'wears'].sort(),
     )
-    expect(Number(db.selectValue('PRAGMA user_version'))).toBe(3)
+    expect(Number(db.selectValue('PRAGMA user_version'))).toBe(4)
     expect(runMigrations(db)).toBe(false)
     db.close()
   })

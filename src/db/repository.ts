@@ -9,7 +9,11 @@ import {
   type FeedbackEntry,
   type Garment,
   type GarmentFilter,
+  type CandidateEntry,
+  type EvaluationDetails,
   type GarmentInput,
+  type NewPurchaseEvaluation,
+  type PurchaseEvaluation,
   type Occasion,
   type Outfit,
   type OutfitInput,
@@ -92,12 +96,22 @@ export interface TasteProfileRepository {
   reset(now?: Date): Promise<TasteProfile>
 }
 
+/** Evaluaciones de compra de prendas candidatas (fase 7). */
+export interface PurchaseEvaluationRepository {
+  /** Guarda una evaluación (el historial se conserva; `latestFor` devuelve la más reciente). */
+  save(evaluation: NewPurchaseEvaluation): Promise<PurchaseEvaluation>
+  latestFor(garmentId: string): Promise<PurchaseEvaluation | null>
+  /** Prendas con estado «candidata» (lista de deseos), la más reciente primero, con su última evaluación. */
+  listCandidates(): Promise<CandidateEntry[]>
+}
+
 /** Todo lo que la UI necesita del almacenamiento. */
 export interface Repository extends GarmentRepository {
   readonly outfits: OutfitRepository
   readonly wears: WearRepository
   readonly feedback: FeedbackRepository
   readonly taste: TasteProfileRepository
+  readonly purchases: PurchaseEvaluationRepository
 }
 
 type Row = Record<string, unknown>
@@ -158,6 +172,35 @@ function rowToFeedback(row: Row): FeedbackEntry {
     garmentIds: JSON.parse(row.garment_ids as string),
     occasion: row.occasion as Occasion,
     reasoning: row.reasoning as string,
+  }
+}
+
+const EMPTY_DETAILS: EvaluationDetails = {
+  perOccasion: {},
+  occasionCount: 0,
+  partnerCount: 0,
+  duplicateIds: [],
+  examples: [],
+  explanation: '',
+  note: '',
+  usedAi: false,
+}
+
+function rowToEvaluation(row: Row): PurchaseEvaluation {
+  let details: Partial<EvaluationDetails> = {}
+  try {
+    details = JSON.parse((row.details as string) || '{}')
+  } catch {
+    /* se usa el resumen vacío */
+  }
+  return {
+    garmentId: row.garment_id as string,
+    verdict: row.verdict as PurchaseEvaluation['verdict'],
+    outfitCount: row.outfit_count as number,
+    gaps: JSON.parse(row.gaps as string),
+    complements: JSON.parse(row.suggested_additions as string),
+    details: { ...EMPTY_DETAILS, ...details },
+    createdAt: row.created_at as string,
   }
 }
 
@@ -224,6 +267,18 @@ export class SqliteGarmentRepository implements Repository {
     get: async () => this.readTaste(),
     save: (summary, now = new Date()) => this.writeTaste(summary, now, false),
     reset: (now = new Date()) => this.writeTaste('', now, true),
+  }
+
+  readonly purchases: PurchaseEvaluationRepository = {
+    save: (evaluation) => this.saveEvaluation(evaluation),
+    latestFor: async (garmentId) => this.latestEvaluation(garmentId),
+    listCandidates: async () =>
+      this.db
+        .selectObjects("SELECT * FROM garments WHERE status = 'candidate' ORDER BY created_at DESC, rowid DESC")
+        .map((row) => {
+          const garment = rowToGarment(row)
+          return { garment, evaluation: this.latestEvaluation(garment.id) }
+        }),
   }
 
   private queue: Promise<unknown> = Promise.resolve()
@@ -432,6 +487,37 @@ export class SqliteGarmentRepository implements Repository {
       }
     })
     return (await this.feedback.get(outfitId))!
+  }
+
+  private latestEvaluation(garmentId: string): PurchaseEvaluation | null {
+    const rows = this.db.selectObjects(
+      'SELECT * FROM purchase_evaluations WHERE garment_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+      [garmentId],
+    )
+    return rows.length ? rowToEvaluation(rows[0]) : null
+  }
+
+  private async saveEvaluation(input: NewPurchaseEvaluation): Promise<PurchaseEvaluation> {
+    const saved: PurchaseEvaluation = { ...input, createdAt: input.createdAt ?? new Date().toISOString() }
+    await this.write(() => {
+      if (this.db.selectValue('SELECT 1 FROM garments WHERE id = ?', [saved.garmentId]) === undefined) {
+        throw new Error('Prenda no encontrada')
+      }
+      this.db.exec({
+        sql: `INSERT INTO purchase_evaluations (garment_id, verdict, outfit_count, gaps, suggested_additions, details, created_at)
+          VALUES (?,?,?,?,?,?,?)`,
+        bind: [
+          saved.garmentId,
+          saved.verdict,
+          saved.outfitCount,
+          JSON.stringify(saved.gaps),
+          JSON.stringify(saved.complements),
+          JSON.stringify(saved.details),
+          saved.createdAt,
+        ],
+      })
+    })
+    return saved
   }
 
   private readTaste(): TasteProfile | null {

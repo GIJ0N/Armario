@@ -10,6 +10,10 @@ export interface Settings {
   longitude: number | null
   /** Ciudad para la que se calcularon latitude/longitude; si cambia `city`, se vuelve a buscar. */
   geoCity: string | null
+  /** Evaluador de compras: outfits mínimos para «Cómprala». */
+  buyMinOutfits: number
+  /** Evaluador de compras: ocasiones mínimas (con al menos un outfit) para «Cómprala». */
+  buyMinOccasions: number
 }
 
 export const SETTINGS_STORAGE_KEY = 'armario.settings'
@@ -22,6 +26,12 @@ export const DEFAULT_SETTINGS: Settings = {
   latitude: null,
   longitude: null,
   geoCity: null,
+  buyMinOutfits: 5,
+  buyMinOccasions: 2,
+}
+
+function positiveInt(v: unknown, fallback: number, max: number): number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 ? Math.min(v, max) : fallback
 }
 
 const listeners = new Set<() => void>()
@@ -53,6 +63,8 @@ export function loadSettings(): Settings {
     latitude: typeof stored.latitude === 'number' ? stored.latitude : null,
     longitude: typeof stored.longitude === 'number' ? stored.longitude : null,
     geoCity: typeof stored.geoCity === 'string' ? stored.geoCity : null,
+    buyMinOutfits: positiveInt(stored.buyMinOutfits, DEFAULT_SETTINGS.buyMinOutfits, 99),
+    buyMinOccasions: positiveInt(stored.buyMinOccasions, DEFAULT_SETTINGS.buyMinOccasions, 6),
   }
   return cacheValue
 }

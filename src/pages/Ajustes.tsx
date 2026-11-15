@@ -33,6 +33,29 @@ async function fetchTaste(repo: Repository): Promise<TasteView | null> {
   }
 }
 
+/** Entero ≥ 1: se puede borrar y reescribir; solo se guardan valores válidos y al salir se restaura el guardado. */
+function IntSetting({ label, value, max, onCommit }: { label: string; value: number; max: number; onCommit: (n: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={max}
+        value={draft ?? String(value)}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          const n = Math.floor(Number(e.target.value))
+          if (e.target.value.trim() !== '' && Number.isFinite(n) && n >= 1) onCommit(Math.min(n, max))
+        }}
+        onBlur={() => setDraft(null)}
+      />
+    </label>
+  )
+}
+
 const pingSchema = z.object({ ok: z.boolean() })
 
 export default function AjustesPage() {
@@ -189,6 +212,23 @@ export default function AjustesPage() {
           <span>Ciudad (para el clima)</span>
           <input value={settings.city} onChange={(e) => update({ city: e.target.value })} />
         </label>
+
+        <h2 className="section-title">Evaluador de compras</h2>
+        <p className="page-hint">
+          «Cómprala» exige al menos estos outfits en al menos estas ocasiones; con menos sale «Solo con complementos».
+        </p>
+        <IntSetting
+          label="Outfits mínimos para «Cómprala»"
+          value={settings.buyMinOutfits}
+          max={99}
+          onCommit={(n) => update({ buyMinOutfits: n })}
+        />
+        <IntSetting
+          label="Ocasiones mínimas para «Cómprala»"
+          value={settings.buyMinOccasions}
+          max={6}
+          onCommit={(n) => update({ buyMinOccasions: n })}
+        />
 
         <h2 className="section-title">Gusto</h2>
         {taste && (

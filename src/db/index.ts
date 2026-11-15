@@ -5,6 +5,7 @@ export type {
   FeedbackRepository,
   GarmentRepository,
   OutfitRepository,
+  PurchaseEvaluationRepository,
   Repository,
   TasteProfileRepository,
   Wear,

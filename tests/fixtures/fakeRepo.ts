@@ -1,11 +1,16 @@
-import type { FeedbackEntry, Garment, Outfit, Repository, Wear, WearEntry } from '../../src/db'
+import { garmentInputSchema, type FeedbackEntry, type Garment, type Outfit, type Repository, type Wear, type WearEntry } from '../../src/db'
 import { computeWearStats } from '../../src/db/wearStats'
 import { addDays, localDateString } from '../../src/lib/date'
 import { memoryFeedback } from './memoryFeedback'
+import { memoryPurchases } from './memoryPurchases'
 import { wardrobe30 } from './wardrobe30'
 
 /** Repositorio en memoria para pruebas de UI. */
-export function fakeRepo(garments: Garment[] = wardrobe30) {
+export function fakeRepo(initial: Garment[] = wardrobe30) {
+  // Copia mutable: Comprar crea, activa y descarta prendas.
+  const garments: Garment[] = [...initial]
+  let n = 0
+  const photos: string[] = []
   const outfits: Outfit[] = []
   const wears: Wear[] = []
   const entries = (): WearEntry[] =>
@@ -22,7 +27,11 @@ export function fakeRepo(garments: Garment[] = wardrobe30) {
       .reverse()
       .sort((a, b) => b.date.localeCompare(a.date))
   const mem = memoryFeedback(() => outfits)
-  const repo: Repository & { saved: Outfit[]; savedWears: Wear[]; ratings: FeedbackEntry[] } = {
+  const buy = memoryPurchases(() => garments)
+  const repo: Repository & { saved: Outfit[]; savedWears: Wear[]; ratings: FeedbackEntry[]; garments: Garment[]; photos: string[] } = {
+    garments,
+    photos,
+    purchases: buy.purchases,
     feedback: mem.feedback,
     taste: mem.taste,
     ratings: mem.rows,
@@ -56,18 +65,30 @@ export function fakeRepo(garments: Garment[] = wardrobe30) {
       stats: async (now = new Date()) => computeWearStats(garments, entries(), localDateString(now)),
     },
     list: async (f) => garments.filter((g) => !f?.statuses || f.statuses.includes(g.status)),
-    get: async () => null,
-    create: async () => {
-      throw new Error('no usado')
+    get: async (id) => garments.find((g) => g.id === id) ?? null,
+    create: async (input) => {
+      const g = { ...garmentInputSchema.parse(input), id: `n${++n}`, created_at: new Date().toISOString() }
+      garments.push(g)
+      return g
     },
-    update: async () => {
-      throw new Error('no usado')
+    update: async (id, input) => {
+      const i = garments.findIndex((g) => g.id === id)
+      garments[i] = { ...garments[i], ...garmentInputSchema.parse(input) }
+      return garments[i]
     },
-    setStatus: async () => {
-      throw new Error('no usado')
+    setStatus: async (id, status) => {
+      const g = garments.find((x) => x.id === id)!
+      g.status = status
+      return g
     },
-    delete: async () => {},
-    savePhoto: async () => 'photo:1',
+    delete: async (id) => {
+      const i = garments.findIndex((g) => g.id === id)
+      if (i >= 0) garments.splice(i, 1)
+    },
+    savePhoto: async () => {
+      photos.push(`photo:${photos.length + 1}`)
+      return photos[photos.length - 1]
+    },
     getPhoto: async () => null,
     deletePhoto: async () => {},
     close: () => {},
