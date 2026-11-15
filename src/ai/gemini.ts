@@ -1,6 +1,7 @@
 import {
   AiAuthError,
   AiInvalidResponseError,
+  AiModelNotFoundError,
   AiNetworkError,
   AiNotConfiguredError,
   AiRateLimitError,
@@ -13,7 +14,7 @@ import {
 import { taggedGarmentSchema, type AiProvider, type GenerateJsonRequest, type TaggedGarment } from './provider'
 
 export const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models'
-export const DEFAULT_TIMEOUT_MS = 20_000
+export const DEFAULT_TIMEOUT_MS = 45_000
 
 export interface GeminiOptions {
   apiKey: string
@@ -34,6 +35,12 @@ function blobToBase64(blob: Blob): Promise<string> {
     }
     reader.readAsDataURL(blob)
   })
+}
+
+export interface ListedModel {
+  /** Id sin el prefijo `models/`. */
+  id: string
+  supportsGenerateContent: boolean
 }
 
 export class GeminiProvider implements AiProvider {
@@ -73,7 +80,7 @@ export class GeminiProvider implements AiProvider {
     const second = await this.callOnce(req, retryPrompt)
     const reparsed = this.parse(req, second)
     if (reparsed.ok) return reparsed.value
-    throw new AiInvalidResponseError(`La IA devolvió una respuesta inválida: ${reparsed.message}`)
+    throw new AiInvalidResponseError(`La IA devolvió una respuesta inválida: ${reparsed.message}`, this.redact(reparsed.message).slice(0, 300))
   }
 
   private parse<T>(
@@ -89,6 +96,58 @@ export class GeminiProvider implements AiProvider {
     const result = req.schema.safeParse(json)
     if (result.success) return { ok: true, value: result.data }
     return { ok: false, message: result.error.message }
+  }
+
+  /** Lista los modelos disponibles para la key (GET /v1beta/models). */
+  async listModels(): Promise<ListedModel[]> {
+    const res = await this.request(`${GEMINI_ENDPOINT}?pageSize=200`, { method: 'GET' })
+    if (!res.ok) await this.throwHttpError(res)
+    let payload: { models?: { name?: string; supportedGenerationMethods?: string[] }[] }
+    try {
+      payload = (await res.json()) as typeof payload
+    } catch {
+      throw new AiInvalidResponseError(undefined, 'la lista de modelos no es JSON')
+    }
+    return (payload.models ?? [])
+      .filter((m): m is { name: string; supportedGenerationMethods?: string[] } => typeof m.name === 'string')
+      .map((m) => ({
+        id: m.name.replace(/^models\//, ''),
+        supportsGenerateContent: m.supportedGenerationMethods?.includes('generateContent') ?? false,
+      }))
+  }
+
+  /** Quita la API key de cualquier texto técnico. */
+  private redact(text: string): string {
+    return text.split(this.apiKey).join('[API key]')
+  }
+
+  private async request(url: string, init: RequestInit): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    try {
+      return await this.fetchImpl(url, {
+        ...init,
+        headers: { ...(init.headers as Record<string, string> | undefined), 'x-goog-api-key': this.apiKey },
+        signal: controller.signal,
+      })
+    } catch (e) {
+      const online = typeof navigator !== 'undefined' ? navigator.onLine : true
+      if (controller.signal.aborted) {
+        throw new AiNetworkError(
+          'La IA tardó demasiado en responder.',
+          `timeout ${Math.round(this.timeoutMs / 1000)} s`,
+          'timeout',
+        )
+      }
+      const what = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+      throw new AiNetworkError(
+        'No se pudo conectar con la IA.',
+        this.redact(`${what} (navigator.onLine=${online})`),
+        online ? 'fetch' : 'offline',
+      )
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   private async callOnce<T>(req: GenerateJsonRequest<T>, userText: string): Promise<string> {
@@ -107,22 +166,11 @@ export class GeminiProvider implements AiProvider {
       },
     }
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
-    let res: Response
-    try {
-      res = await this.fetchImpl(`${GEMINI_ENDPOINT}/${encodeURIComponent(this.model)}:generateContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      })
-    } catch (e) {
-      if (controller.signal.aborted) throw new AiNetworkError('La IA tardó demasiado en responder.')
-      throw new AiNetworkError(e instanceof Error ? 'No se pudo conectar con la IA.' : undefined)
-    } finally {
-      clearTimeout(timer)
-    }
+    const res = await this.request(`${GEMINI_ENDPOINT}/${encodeURIComponent(this.model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
 
     if (!res.ok) await this.throwHttpError(res)
 
@@ -143,18 +191,24 @@ export class GeminiProvider implements AiProvider {
   }
 
   private async throwHttpError(res: Response): Promise<never> {
-    let detail = ''
+    let reason = ''
+    let status = ''
+    let message = ''
     try {
       const j = (await res.json()) as { error?: { message?: string; status?: string; details?: { reason?: string }[] } }
-      detail = `${j.error?.status ?? ''} ${j.error?.details?.map((d) => d.reason).join(' ') ?? ''} ${j.error?.message ?? ''}`
+      status = j.error?.status ?? ''
+      reason = j.error?.details?.map((d) => d.reason).filter(Boolean).join(' ') ?? ''
+      message = j.error?.message ?? ''
     } catch {
       /* cuerpo no JSON */
     }
-    if (res.status === 429) throw new AiRateLimitError()
-    if (res.status === 401 || res.status === 403 || (res.status === 400 && detail.includes('API_KEY_INVALID'))) {
-      throw new AiAuthError()
+    const detail = this.redact(`HTTP ${res.status} ${status} ${reason} ${message}`.replace(/\s+/g, ' ').trim()).slice(0, 300)
+    if (res.status === 429) throw new AiRateLimitError(undefined, detail)
+    if (res.status === 401 || res.status === 403 || (res.status === 400 && `${status} ${reason} ${message}`.includes('API_KEY_INVALID'))) {
+      throw new AiAuthError(undefined, detail)
     }
-    if (res.status >= 500) throw new AiNetworkError(`La IA no está disponible (HTTP ${res.status}).`)
-    throw new AiInvalidResponseError(`La IA rechazó la solicitud (HTTP ${res.status}).`)
+    if (res.status === 404) throw new AiModelNotFoundError(this.model, detail)
+    if (res.status >= 500) throw new AiNetworkError(`La IA no está disponible (HTTP ${res.status}).`, detail, 'http')
+    throw new AiInvalidResponseError(`La IA rechazó la solicitud (HTTP ${res.status}).`, detail)
   }
 }
