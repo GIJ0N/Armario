@@ -16,9 +16,38 @@ export interface TastePreferences {
   /** Prendas (no accesorios) de outfits con «me gusta». */
   likedGarmentIds: string[]
   ratingCount: number
+  /**
+   * Fase 12: señal ligera de los cambios manuales por prenda, en niveles enteros acotados a ±MANUAL_SCORE_CAP:
+   * +1 cada vez que la elegiste a mano, -1 cada vez que la quitaste. Solo orienta el compositor por reglas.
+   */
+  manualScores?: Record<string, number>
 }
 
 export const NEUTRAL_TASTE: TastePreferences = { formalityBias: 0, dislikedPairs: [], likedGarmentIds: [], ratingCount: 0 }
+
+/** Tope (en niveles) de la señal manual por prenda; el compositor la multiplica por `MANUAL_WEIGHT`. */
+export const MANUAL_SCORE_CAP = 3
+
+/** Lo mínimo de un cambio manual que el motor necesita. */
+export interface TasteSwap {
+  fromGarmentId: string | null
+  toGarmentId: string | null
+}
+
+/** Suma +1 por prenda elegida a mano y -1 por prenda quitada; acotado a ±MANUAL_SCORE_CAP y sin ceros. */
+export function computeManualScores(swaps: TasteSwap[], exists: (id: string) => boolean = () => true): Record<string, number> {
+  const raw = new Map<string, number>()
+  for (const s of swaps) {
+    if (s.toGarmentId && exists(s.toGarmentId)) raw.set(s.toGarmentId, (raw.get(s.toGarmentId) ?? 0) + 1)
+    if (s.fromGarmentId && exists(s.fromGarmentId)) raw.set(s.fromGarmentId, (raw.get(s.fromGarmentId) ?? 0) - 1)
+  }
+  const out: Record<string, number> = {}
+  for (const [id, v] of raw) {
+    const c = Math.max(-MANUAL_SCORE_CAP, Math.min(MANUAL_SCORE_CAP, v))
+    if (c !== 0) out[id] = c
+  }
+  return out
+}
 
 /** Con menos calificaciones que esto el sesgo se diluye (3 de 3 «muy formal» = -0.5). */
 export const BIAS_MIN_SAMPLE = 6
@@ -43,6 +72,7 @@ function pairsOf(ids: string[]): string[] {
 export function computeTaste(
   feedback: TasteFeedback[],
   categoryOf: (garmentId: string) => Category | undefined,
+  swaps: TasteSwap[] = [],
 ): TastePreferences {
   const core = (ids: string[]) => ids.filter((id) => {
     const c = categoryOf(id)
@@ -68,6 +98,7 @@ export function computeTaste(
     dislikedPairs: [...pairCount].filter(([, n]) => n >= DISLIKED_PAIR_MIN).map(([k]) => k).sort(),
     likedGarmentIds: [...liked].sort(),
     ratingCount: feedback.length,
+    ...(swaps.length ? { manualScores: computeManualScores(swaps, (id) => categoryOf(id) !== undefined) } : {}),
   }
 }
 

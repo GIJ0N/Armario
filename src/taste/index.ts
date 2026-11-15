@@ -15,6 +15,8 @@ import { computeTaste, type TastePreferences } from '../engine'
 export const TASTE_UPDATE_EVERY = 10
 /** Calificaciones recientes que entran al resumen y al cálculo del motor. */
 export const TASTE_WINDOW = 60
+/** Cambios manuales recientes que cuentan como señal. */
+export const SWAP_WINDOW = 200
 
 export interface LoadedTaste {
   preferences: TastePreferences
@@ -29,14 +31,22 @@ function activeEntries(entries: FeedbackEntry[], resetAt: string): FeedbackEntry
 
 /** Carga lo que el motor necesita del gusto (preferencias deterministas, perfil de texto y ejemplos). */
 export async function loadTaste(repo: Repository, garments: Garment[]): Promise<LoadedTaste> {
-  const [profile, recent] = await Promise.all([repo.taste.get(), repo.feedback.listRecent(TASTE_WINDOW)])
-  const entries = activeEntries(recent, profile?.resetAt ?? '')
+  const [profile, recent, swaps] = await Promise.all([
+    repo.taste.get(),
+    repo.feedback.listRecent(TASTE_WINDOW),
+    repo.swaps.list(SWAP_WINDOW),
+  ])
+  const resetAt = profile?.resetAt ?? ''
+  const entries = activeEntries(recent, resetAt)
+  // «Reiniciar gusto» también deja de contar los cambios manuales anteriores.
+  const activeSwaps = resetAt ? swaps.filter((s) => s.createdAt > resetAt) : swaps
   const category = new Map(garments.map((g) => [g.id, g.category]))
   const liked = entries.filter((e) => e.rating === 'like').slice(0, MAX_LIKED_EXAMPLES)
   return {
     preferences: computeTaste(
       entries.map((e) => ({ rating: e.rating, tags: e.tags, garmentIds: e.garmentIds })),
       (id) => category.get(id),
+      activeSwaps,
     ),
     summary: profile?.summary ?? '',
     likedOutfits: liked.map((e) => ({ garmentIds: e.garmentIds, reasoning: e.reasoning })),

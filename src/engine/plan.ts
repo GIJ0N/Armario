@@ -25,6 +25,23 @@ export interface Plan {
   avoidPairs: Set<string>
   /** El gusto endureció el rango de formalidad en este plan. */
   tasteApplied: boolean
+  /** Fase 12: se exige una favorita en cada outfit (pedido y posible junto con el resto de reglas). */
+  requireFavorite: boolean
+  /** Fase 12: se pidió una favorita pero es imposible; se ignora y se avisa. */
+  favoriteUnsatisfiable: boolean
+}
+
+/** Accesorios favoritos aptos para sumarse a una base (misma regla de formalidad y un solo protagonista). */
+export function favoriteAccessoriesFor(plan: Pick<Plan, 'filter'>, core: Garment[]): Garment[] {
+  const mean = core.reduce((s, g) => s + g.formality, 0) / core.length
+  return plan.filter.bySlot.accessory.filter(
+    (a) => a.favorite && Math.abs(a.formality - mean) <= 1 && !(a.is_statement && core.some((g) => g.is_statement)),
+  )
+}
+
+/** ¿La base ya tiene una favorita o se le puede sumar un accesorio favorito? */
+export function canHaveFavorite(plan: Pick<Plan, 'filter'>, core: Garment[]): boolean {
+  return core.some((g) => g.favorite) || favoriteAccessoriesFor(plan, core).length > 0
 }
 
 /** Mínimo de combinaciones sin pares evitados para exigir evitarlos. */
@@ -121,6 +138,8 @@ function buildPlanWith(ctx: EngineContext, applyTaste: boolean): Plan {
     hasCombos: false,
     avoidPairs: new Set(),
     tasteApplied: applyTaste && tasteTightens(ctx.occasion, ctx.taste),
+    requireFavorite: false,
+    favoriteUnsatisfiable: false,
   }
   if (filter.missing.length === 0) {
     const feasible = new Set<string>()
@@ -133,6 +152,18 @@ function buildPlanWith(ctx: EngineContext, applyTaste: boolean): Plan {
     })
     plan.priorityIds = new Set([...rotation.priorityIds].filter((id) => feasible.has(id)))
     if (clean >= MIN_CLEAN_COMBOS) plan.avoidPairs = disliked
+    if (ctx.requireFavorite && plan.hasCombos) {
+      // La favorita debe poder convivir con la regla de la prioritaria; si no hay ninguna combinación así, se ignora.
+      let joint = false
+      forEachBaseCombo(plan, (items) => {
+        if (plan.priorityIds.size > 0 && !items.some((g) => plan.priorityIds.has(g.id))) return
+        if (!canHaveFavorite(plan, items)) return
+        joint = true
+        return false
+      })
+      plan.requireFavorite = joint
+      plan.favoriteUnsatisfiable = !joint
+    }
   }
   return plan
 }

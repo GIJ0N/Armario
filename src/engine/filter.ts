@@ -44,6 +44,22 @@ export function isRainy(w: Weather): boolean {
 
 const inRange = (v: number, r: Range) => v >= r[0] && v <= r[1]
 
+/** Rango de abrigo aceptable de una categoría con este clima (null = no se filtra por clima). */
+export function warmthRangeFor(category: Category, weather: Weather): Range | null {
+  const band = weatherBand(weather)
+  if (category === 'top') return band.top
+  if (category === 'bottom') return band.bottom
+  if (category === 'outerwear') {
+    return isRainy(weather) ? [band.outerwear[0], Math.max(band.outerwear[1], 3)] : band.outerwear
+  }
+  return null
+}
+
+/** Rango de formalidad con el que `filterGarments` evalúa una categoría (el gusto lo puede endurecer). */
+export function formalityRangeFor(occasion: EngineContext['occasion'], category: Category, taste?: TastePreferences): Range {
+  return tasteFormalityRange(occasion, category, taste) ?? formalityRange(occasion, category)
+}
+
 export interface FilterResult {
   bySlot: Record<Category, Garment[]>
   eligibleIds: Set<string>
@@ -68,19 +84,14 @@ export function filterGarments(
   ctx: Pick<EngineContext, 'occasion' | 'weather' | 'garments'>,
   /** Preferencias de gusto que endurecen la formalidad de superiores e inferiores (fase 5). */
   taste?: TastePreferences,
+  /** Fase 12: `ignoreWeather` omite abrigo y capa exterior (sin clima, p. ej. «Crear outfit» en Armario). */
+  opts: { ignoreWeather?: boolean } = {},
 ): FilterResult {
   const { occasion, weather } = ctx
   const band = weatherBand(weather)
   const rainy = isRainy(weather)
   const bySlot = Object.fromEntries(CATEGORIES.map((c) => [c, [] as Garment[]])) as Record<Category, Garment[]>
   const formalityOk: Record<Category, number> = { top: 0, bottom: 0, shoes: 0, outerwear: 0, accessory: 0 }
-
-  const warmthRange = (c: Category): Range | null => {
-    if (c === 'top') return band.top
-    if (c === 'bottom') return band.bottom
-    if (c === 'outerwear') return rainy ? [band.outerwear[0], Math.max(band.outerwear[1], 3)] : band.outerwear
-    return null
-  }
 
   for (const g of ctx.garments) {
     if (g.status !== 'active') continue
@@ -91,7 +102,7 @@ export function filterGarments(
       : inRange(g.formality, formalityRange(occasion, g.category)) || g.occasions.includes(occasion)
     if (!fits) continue
     formalityOk[g.category]++
-    const wr = warmthRange(g.category)
+    const wr = opts.ignoreWeather ? null : warmthRangeFor(g.category, weather)
     if (wr && !inRange(g.warmth, wr)) continue
     bySlot[g.category].push(g)
   }
@@ -106,14 +117,14 @@ export function filterGarments(
     }
   }
 
-  const cold = band.outerwearAdvice === 'required'
+  const cold = !opts.ignoreWeather && band.outerwearAdvice === 'required'
   const haveOuter = bySlot.outerwear.length > 0
   let advice = band.outerwearAdvice
   let needsOuterwear = false
   if (cold) {
     needsOuterwear = true
     if (!haveOuter) missing.push(`No tienes ${SLOT_NOUN.outerwear} para este frío.`)
-  } else if (rainy) {
+  } else if (rainy && !opts.ignoreWeather) {
     if (haveOuter) {
       needsOuterwear = true
       advice = 'required'

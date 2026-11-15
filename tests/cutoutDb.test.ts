@@ -37,7 +37,7 @@ describe('migración 0005', () => {
     runMigrations(db, MIGRATIONS.slice(0, 4))
     db.exec("INSERT INTO garments (id, category, formality, warmth, created_at) VALUES ('x','top',3,3,'now')")
     expect(runMigrations(db)).toBe(true)
-    expect(Number(db.selectValue('PRAGMA user_version'))).toBe(5)
+    expect(Number(db.selectValue('PRAGMA user_version'))).toBe(MIGRATIONS.length)
     expect(db.selectObjects('SELECT id, cutout_path, cutout_kind FROM garments')).toEqual([
       { id: 'x', cutout_path: null, cutout_kind: null },
     ])

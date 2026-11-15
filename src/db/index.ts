@@ -7,6 +7,7 @@ export type {
   OutfitRepository,
   PurchaseEvaluationRepository,
   Repository,
+  SwapRepository,
   TasteProfileRepository,
   Wear,
   WearEntry,

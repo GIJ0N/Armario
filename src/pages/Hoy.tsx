@@ -1,13 +1,17 @@
-import { Cloud, CloudRain, RotateCcw, SlidersHorizontal, Sparkles, Sun } from 'lucide-react'
+import { Cloud, CloudRain, Heart, RotateCcw, SlidersHorizontal, Sparkles, Sun } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAi } from '../ai/AiProviderContext'
 import type { AiProvider } from '../ai/provider'
-import { OutfitCard } from '../components/OutfitCard'
+import { LaundrySheet } from '../components/LaundrySheet'
+import { OutfitEditFlow, type EditTarget } from '../components/OutfitEditFlow'
+import { OutfitCard, type CardOutfit } from '../components/OutfitCard'
 import { OutfitCarousel } from '../components/OutfitCarousel'
+import { SaveOutfitSheet } from '../components/SaveOutfitSheet'
 import { useRepository } from '../components/RepositoryContext'
 import { useToast } from '../components/ToastProvider'
 import { OCCASIONS, OCCASION_LABELS, type FeedbackEntry, type Garment, type Occasion, type Rating } from '../db'
-import { daysBetween, NO_REPEAT_DAYS, suggestOutfits, type SuggestedOutfit, type Weather } from '../engine'
+import { daysBetween, NO_REPEAT_DAYS, suggestOutfits, type Weather, type WearRecord } from '../engine'
+import { commitOutfitEdit } from '../outfits/edit'
 import { localDateString } from '../lib/date'
 import { useSettings } from '../settings'
 import { loadTaste, maybeUpdateTasteProfile } from '../taste'
@@ -23,13 +27,20 @@ import {
 type WeatherState = { status: 'loading' } | { status: 'ready'; result: WeatherResult | null }
 
 /** Sugerencia mostrada; `outfitId` es la fila guardada (null si no se pudo guardar). */
-type ShownOutfit = SuggestedOutfit & { outfitId: string | null }
+type ShownOutfit = CardOutfit & { outfitId: string | null; saved: boolean; name: string | null }
 
 interface Suggestions {
   outfits: ShownOutfit[]
+  /** Activas y en lavandería (las alternativas de la edición incluyen estas últimas). */
   garments: Map<string, Garment>
   warnings: string[]
+  occasion: Occasion
+  weather: Weather
+  wears: WearRecord[]
+  today: string
 }
+
+const outfitKey = (o: ShownOutfit) => o.outfitId ?? o.garmentIds.join('|')
 
 /** Historial de usos que alimenta la rotación (días). */
 const WEARS_LOOKBACK_DAYS = 60
@@ -44,7 +55,7 @@ function ageLabel(ms: number): string {
 export default function HoyPage() {
   const repo = useRepository()
   const ai = useAi()
-  const [settings] = useSettings()
+  const [settings, updateSettings] = useSettings()
   const toast = useToast()
   const [occasion, setOccasion] = useState<Occasion>('casual')
   const [weatherState, setWeatherState] = useState<WeatherState>({ status: 'loading' })
@@ -56,6 +67,9 @@ export default function HoyPage() {
   const [worn, setWorn] = useState<Set<string>>(new Set())
   const [wearBusy, setWearBusy] = useState(false)
   const [ratings, setRatings] = useState<Map<string, FeedbackEntry>>(new Map())
+  const [editing, setEditing] = useState<{ key: string; target: EditTarget } | null>(null)
+  const [saving, setSaving] = useState<ShownOutfit | null>(null)
+  const [laundryFor, setLaundryFor] = useState<ShownOutfit | null>(null)
   const runId = useRef(0)
   /** Outfits ya mostrados en esta sesión (solo en memoria): «Otras opciones» no los repite. */
   const shown = useRef<string[][]>([])
@@ -92,7 +106,8 @@ export default function HoyPage() {
     setBusy(true)
     setError(null)
     try {
-      const garments = await repo.list({ statuses: ['active'] })
+      const pool = await repo.list({ statuses: ['active', 'laundry'] })
+      const garments = pool.filter((g) => g.status === 'active')
       const today = localDateString()
       // Rotación y no repetir usan lo USADO de verdad; lo solo sugerido no cuenta.
       const wearEntries = await repo.wears.listSince(WEARS_LOOKBACK_DAYS)
@@ -118,6 +133,7 @@ export default function HoyPage() {
           wears,
           recentOutfits,
           today,
+          ...(settings.requireFavorite ? { requireFavorite: true } : {}),
           ...(taste
             ? { taste: taste.preferences, tasteSummary: taste.summary, likedOutfits: taste.likedOutfits }
             : {}),
@@ -125,7 +141,7 @@ export default function HoyPage() {
         provider,
       )
       const warnings = [...res.warnings]
-      const outfits: ShownOutfit[] = res.outfits.map((o) => ({ ...o, outfitId: null }))
+      const outfits: ShownOutfit[] = res.outfits.map((o) => ({ ...o, outfitId: null, saved: false, name: null }))
       try {
         for (const o of outfits) {
           const saved = await repo.outfits.create({
@@ -142,7 +158,15 @@ export default function HoyPage() {
       }
       if (id !== runId.current) return
       shown.current.push(...outfits.map((o) => o.garmentIds))
-      setSuggestions({ outfits, garments: new Map(garments.map((g) => [g.id, g])), warnings })
+      setSuggestions({
+        outfits,
+        garments: new Map(pool.map((g) => [g.id, g])),
+        warnings,
+        occasion,
+        weather,
+        wears: wears.map((w) => ({ garmentIds: w.garmentIds, date: w.date })),
+        today,
+      })
     } catch (e) {
       if (id === runId.current) setError(e instanceof Error ? e.message : 'No se pudieron generar los outfits.')
     } finally {
@@ -170,6 +194,100 @@ export default function HoyPage() {
     } finally {
       setWearBusy(false)
     }
+  }
+
+  function replaceOutfit(key: string, next: ShownOutfit) {
+    setSuggestions((cur) => (cur ? { ...cur, outfits: cur.outfits.map((x) => (outfitKey(x) === key ? next : x)) } : cur))
+  }
+
+  /** Aplica un cambio manual: actualiza el lienzo al instante y guarda según la regla de edición. */
+  async function applyEdit(o: ShownOutfit, next: Garment[], summary: string) {
+    if (!suggestions) return
+    const key = outfitKey(o)
+    const ids = next.map((g) => g.id)
+    setEditing(null)
+    // Vista previa inmediata; si falla el guardado se muestra un aviso y se conserva lo editado.
+    replaceOutfit(key, { ...o, garmentIds: ids, source: 'manual' })
+    try {
+      const original = o.outfitId ? await repo.outfits.get(o.outfitId) : null
+      const { outfit, createdNew } = await commitOutfitEdit(repo, {
+        original,
+        baseIds: o.garmentIds,
+        next: { garmentIds: ids, occasion: suggestions.occasion, weather: suggestions.weather },
+        categoryOf: (id) => suggestions.garments.get(id)?.category,
+      })
+      // Si ya la llevabas hoy, el uso de hoy pasa al outfit corregido (no se cuenta dos veces).
+      let wasWorn = false
+      if (createdNew && o.outfitId && worn.has(o.outfitId)) {
+        wasWorn = true
+        await repo.wears.deleteForOutfitOnDate(o.outfitId, suggestions.today)
+        await repo.wears.create(outfit.id, suggestions.today)
+      }
+      shown.current.push(ids)
+      setWorn((prev) => {
+        const nextSet = new Set(prev)
+        if (o.outfitId) nextSet.delete(o.outfitId)
+        if (wasWorn) nextSet.add(outfit.id)
+        return nextSet
+      })
+      replaceOutfit(key, {
+        garmentIds: ids,
+        reasoning: outfit.reasoning,
+        source: 'manual',
+        outfitId: outfit.id,
+        saved: !!outfit.saved_at,
+        name: outfit.name ?? null,
+      })
+      toast(summary)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar el cambio.')
+    }
+  }
+
+  /** Guarda el outfit en Armario › Outfits; si todavía no está en el historial, primero lo crea. */
+  async function saveOutfit(o: ShownOutfit, name: string) {
+    if (!suggestions) return
+    let id = o.outfitId
+    if (!id) {
+      const created = await repo.outfits.create({
+        garment_ids: o.garmentIds,
+        occasion: suggestions.occasion,
+        weather_snapshot: suggestions.weather,
+        reasoning: o.reasoning,
+        source: o.source === 'ia' ? 'ai' : o.source === 'manual' ? 'manual' : 'rules',
+      })
+      id = created.id
+    }
+    const saved = await repo.outfits.save(id, name || undefined)
+    replaceOutfit(outfitKey(o), { ...o, outfitId: saved.id, saved: true, name: saved.name ?? null })
+    setSaving(null)
+    toast('Outfit guardado en Armario › Outfits')
+  }
+
+  async function unsaveOutfit(o: ShownOutfit) {
+    if (!o.outfitId) return
+    try {
+      await repo.outfits.unsave(o.outfitId)
+      replaceOutfit(outfitKey(o), { ...o, saved: false, name: null })
+      toast('Quitado de guardados')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo actualizar.')
+    }
+  }
+
+  async function sendToLaundry(ids: string[]) {
+    for (const id of ids) await repo.setStatus(id, 'laundry')
+    setSuggestions((cur) => {
+      if (!cur) return cur
+      const garments = new Map(cur.garments)
+      for (const id of ids) {
+        const g = garments.get(id)
+        if (g) garments.set(id, { ...g, status: 'laundry' })
+      }
+      return { ...cur, garments }
+    })
+    setLaundryFor(null)
+    toast(ids.length === 1 ? 'Prenda enviada a lavandería' : `${ids.length} prendas enviadas a lavandería`)
   }
 
   async function rate(o: ShownOutfit, rating: Rating, tags: string[], comment: string) {
@@ -273,6 +391,16 @@ export default function HoyPage() {
 
       <button
         type="button"
+        className={`chip chip-toggle${settings.requireFavorite ? ' chip-active' : ''}`}
+        aria-pressed={settings.requireFavorite}
+        onClick={() => updateSettings({ requireFavorite: !settings.requireFavorite })}
+      >
+        <Heart size={16} aria-hidden="true" fill={settings.requireFavorite ? 'currentColor' : 'none'} />
+        Con una favorita
+      </button>
+
+      <button
+        type="button"
         className="btn btn-primary btn-block"
         disabled={busy || !weather}
         onClick={() => void run(false)}
@@ -306,6 +434,11 @@ export default function HoyPage() {
                 onUndo={() => void toggleWear(o, false)}
                 feedback={o.outfitId ? (ratings.get(o.outfitId) ?? null) : null}
                 onRate={o.outfitId ? (rating, tags, comment) => rate(o, rating, tags, comment) : undefined}
+                onSelectGarment={(id) => setEditing({ key: outfitKey(o), target: { kind: 'swap', garmentId: id } })}
+                onAdd={() => setEditing({ key: outfitKey(o), target: { kind: 'add' } })}
+                saved={o.saved}
+                onToggleSave={() => (o.saved ? void unsaveOutfit(o) : setSaving(o))}
+                onLaundry={() => setLaundryFor(o)}
               />
             ))}
           </OutfitCarousel>
@@ -315,6 +448,34 @@ export default function HoyPage() {
             </button>
           )}
         </div>
+      )}
+      {suggestions && editing && (() => {
+        const o = suggestions.outfits.find((x) => outfitKey(x) === editing.key)
+        if (!o) return null
+        const items = o.garmentIds.map((id) => suggestions.garments.get(id)).filter((g): g is Garment => !!g)
+        return (
+          <OutfitEditFlow
+            ctx={{
+              occasion: suggestions.occasion,
+              weather: suggestions.weather,
+              garments: [...suggestions.garments.values()],
+              wears: suggestions.wears,
+              today: suggestions.today,
+            }}
+            items={items}
+            target={editing.target}
+            onApply={(next, summary) => void applyEdit(o, next, summary)}
+            onClose={() => setEditing(null)}
+          />
+        )
+      })()}
+      {saving && <SaveOutfitSheet onSave={(name) => saveOutfit(saving, name)} onClose={() => setSaving(null)} />}
+      {suggestions && laundryFor && (
+        <LaundrySheet
+          items={laundryFor.garmentIds.map((id) => suggestions.garments.get(id)).filter((g): g is Garment => !!g)}
+          onConfirm={(ids) => sendToLaundry(ids)}
+          onClose={() => setLaundryFor(null)}
+        />
       )}
     </section>
   )

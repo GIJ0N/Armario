@@ -10,6 +10,7 @@ Hard constraints (an outfit that breaks any of them is rejected by code):
 - Accessories: 0 to 2, each with formality within 1 point of the outfit's average formality.
 - Formality of top, bottom, shoes and outerwear must not differ by more than 1 point (scale 1-5).
 - At most ONE garment with "is_statement": true in the whole outfit.
+- When "favorite_required" is true, every outfit must also include at least one garment whose id is listed in "favorite_ids" (the user's favorites; it may be an accessory). Ignore this rule when "favorite_required" is absent.
 - Every outfit must include at least one garment with "priority": true (these are the least-worn pieces we want to bring back into rotation).
 - Never repeat a combination listed in "recent_outfits", and the 3 outfits must be different from each other (different set of top, bottom, shoes and outerwear).
 - Only use ids that appear in "candidates". Respect the weather: warmth values already fit the temperature, and rain calls for suitable outerwear when available.
@@ -93,6 +94,8 @@ export interface StylistPromptInput {
   recentOutfits: string[][]
   /** Errores de validación de un intento anterior (reintento). */
   errors?: string[]
+  /** Fase 12: ids de prendas favoritas; si se pasan, cada outfit debe incluir al menos una. */
+  favoriteIds?: string[]
   /** Fase 5: perfil de gusto en texto. */
   tasteProfile?: string
   /** Fase 5: outfits con «me gusta» como ejemplos. */
@@ -108,6 +111,7 @@ export function buildStylistUser(input: StylistPromptInput): string {
     outerwear_recommended: input.outerwearRecommended,
     candidates: input.candidates,
     recent_outfits: input.recentOutfits,
+    ...(input.favoriteIds?.length ? { favorite_required: true, favorite_ids: input.favoriteIds } : {}),
   }
   const parts: string[] = []
   if (input.tasteProfile?.trim()) parts.push(`Taste profile of the user:\n${input.tasteProfile.trim()}`)

@@ -78,6 +78,9 @@ function promptFor(plan: Plan, errors?: string[]) {
       candidates: candidatesFor(plan),
       recentOutfits: ctx.recentOutfits.map((o) => o.garmentIds),
       errors,
+      ...(plan.requireFavorite
+        ? { favoriteIds: ctx.garments.filter((g) => g.favorite && plan.filter.eligibleIds.has(g.id)).map((g) => g.id) }
+        : {}),
       tasteProfile: ctx.tasteSummary,
       likedExamples: likedExamples(plan),
     }),
@@ -114,6 +117,9 @@ function checkAiOutfits(plan: Plan, response: StylistResponse, kept: SuggestedOu
 export async function suggestOutfits(ctx: EngineContext, ai?: AiProvider): Promise<SuggestResult> {
   const plan = buildPlan(ctx)
   const warnings = [...plan.filter.warnings]
+  if (plan.favoriteUnsatisfiable) {
+    warnings.push('No hay una combinación con una prenda favorita para esta ocasión y clima; se ignoró «Con una favorita».')
+  }
 
   if (plan.filter.missing.length > 0) {
     return { outfits: [], source: 'reglas', warnings: [...plan.filter.missing, ...warnings] }

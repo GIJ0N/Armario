@@ -19,6 +19,7 @@ import type { Repository } from '../src/db'
 import App from '../src/App'
 import { fakeRepo } from './fixtures/fakeRepo'
 import { memoryFeedback } from './fixtures/memoryFeedback'
+import { memoryOutfits } from './fixtures/memoryOutfits'
 import { memoryPurchases } from './fixtures/memoryPurchases'
 
 // jsdom no decodifica imágenes: simulamos el redimensionado.
@@ -36,20 +37,15 @@ function createFakeRepo(): Repository & { items: Garment[] } {
       (g) => (!f.category || g.category === f.category) && (!f.statuses || f.statuses.includes(g.status)),
     )
   const mem = memoryFeedback(() => outfitRows)
+  const out = memoryOutfits(outfitRows)
   return {
     items,
     feedback: mem.feedback,
     taste: mem.taste,
     purchases: memoryPurchases(() => items).purchases,
     wears: fakeRepo(items).wears,
-    outfits: {
-      create: async (input) => {
-        const o = { ...input, id: `o${outfitRows.length + 1}`, created_at: new Date().toISOString() }
-        outfitRows.push(o)
-        return o
-      },
-      listRecent: async () => [...outfitRows].reverse(),
-    },
+    outfits: out.outfits,
+    swaps: out.swaps,
     list: async (f) => byFilter(f),
     get: async (id) => items.find((g) => g.id === id) ?? null,
     create: async (input: GarmentInput) => {
@@ -67,6 +63,7 @@ function createFakeRepo(): Repository & { items: Garment[] } {
       g.status = status
       return g
     },
+    setFavorite: async (id, favorite) => Object.assign(items.find((g) => g.id === id)!, { favorite }),
     delete: async (id) => {
       items.splice(items.findIndex((g) => g.id === id), 1)
     },
@@ -138,7 +135,7 @@ describe('Agregar y Armario', () => {
 
     const card = (await screen.findByText('Playera')).closest('li')!
     await userEvent.click(within(card).getByRole('button', { name: 'A lavandería' }))
-    expect(await within(card).findByRole('button', { name: 'Marcar activa' })).toBeInTheDocument()
+    expect(await within(card).findByRole('button', { name: 'Ya está limpia' })).toBeInTheDocument()
     expect(repo.items[0].status).toBe('laundry')
 
     await userEvent.selectOptions(screen.getByLabelText('Estado'), 'candidate')
