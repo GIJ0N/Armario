@@ -1,4 +1,4 @@
-import { WifiOff } from 'lucide-react'
+import { BellOff, WifiOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useOnline } from '../lib/useOnline'
 import { useLocation } from 'react-router-dom'
@@ -68,22 +68,19 @@ function BackupReminder() {
   }
 
   return (
-    <div className="banner" role="region" aria-label="Recordatorio de respaldo">
+    <div className="banner banner-compact" role="region" aria-label="Recordatorio de respaldo">
       <strong>Haz tu respaldo semanal</strong>
-      <p>Guarda una copia de tu armario en Archivos o iCloud Drive para no perderlo.</p>
+      <button type="button" className="btn btn-primary btn-small" disabled={busy} onClick={() => void backupNow()}>
+        Respaldar
+      </button>
+      <button type="button" className="icon-btn" aria-label="Recordar mañana" onClick={() => snoozeBackupReminder()}>
+        <BellOff size={18} aria-hidden="true" />
+      </button>
       {error && (
         <p role="alert" className="form-error">
           {error}
         </p>
       )}
-      <div className="banner-actions">
-        <button type="button" className="btn btn-primary btn-small" disabled={busy} onClick={() => void backupNow()}>
-          Respaldar ahora
-        </button>
-        <button type="button" className="btn btn-small" onClick={() => snoozeBackupReminder()}>
-          Recordar mañana
-        </button>
-      </div>
     </div>
   )
 }

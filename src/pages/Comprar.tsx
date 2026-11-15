@@ -9,7 +9,7 @@ import { GarmentPhoto } from '../components/GarmentPhoto'
 import { PurchaseResult, VerdictBadge } from '../components/PurchaseResult'
 import { useRepository } from '../components/RepositoryContext'
 import { useAiTagging } from '../components/useAiTagging'
-import { queueCutout, useBackgroundRemover } from '../cutout'
+import { finishCutoutAfterSave, useBackgroundRemover } from '../cutout'
 import { CATEGORY_LABELS, type CandidateEntry, type Garment, type PurchaseEvaluation } from '../db'
 import { evaluatePurchase, toStoredEvaluation } from '../purchase'
 import { useSettings } from '../settings'
@@ -74,7 +74,7 @@ export default function ComprarPage() {
     return evaluation
   }
 
-  async function submitCandidate({ data, newPhoto }: GarmentFormSubmit) {
+  async function submitCandidate({ data, newPhoto, providedCutout }: GarmentFormSubmit) {
     const photo_path = newPhoto ? await repo.savePhoto(newPhoto) : null
     let garment: Garment
     try {
@@ -84,7 +84,7 @@ export default function ComprarPage() {
       throw e
     }
     setMessage(null)
-    if (photo_path) void queueCutout(repo, remover, garment, suggestion?.values.bbox)
+    if (photo_path) await finishCutoutAfterSave(repo, remover, garment, { providedCutout, bbox: suggestion?.values.bbox })
     try {
       const evaluation = await runEvaluation(garment)
       setViewing({ garment, evaluation, fromWishlist: false })

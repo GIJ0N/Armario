@@ -123,10 +123,10 @@ describe('banner de respaldo en el shell', () => {
     expect(screen.queryByText('Haz tu respaldo semanal')).not.toBeInTheDocument()
   })
 
-  it('"Respaldar ahora" exporta', async () => {
+  it('"Respaldar" exporta', async () => {
     actions.exportBackupNow.mockResolvedValue(true)
     renderApp()
-    await userEvent.click(await screen.findByRole('button', { name: 'Respaldar ahora' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Respaldar' }))
     expect(actions.exportBackupNow).toHaveBeenCalled()
   })
 

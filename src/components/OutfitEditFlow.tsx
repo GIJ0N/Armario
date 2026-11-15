@@ -9,6 +9,7 @@ import {
 } from '../engine'
 import { AlternativesPicker } from './AlternativesPicker'
 import { BottomSheet } from './BottomSheet'
+import { useToast } from './ToastProvider'
 
 export interface EditContext {
   occasion: Occasion
@@ -48,16 +49,21 @@ export function SlotPicker({
   replace: Garment | null
   onApply: (next: Garment[], summary: string) => void
 }) {
+  const toast = useToast()
   const alternatives = useMemo(
     () => findAlternatives({ ...ctx, items, replaceId: replace?.id ?? null, category }),
     [ctx, items, replace, category],
   )
   const without = items.filter((g) => g.id !== replace?.id)
-  const pick = (g: Garment) =>
+  const pick = (g: Garment) => {
+    // Elegir de «Otras» sigue permitido, pero se avisa el motivo.
+    const unfit = alternatives.others.find((o) => o.garment.id === g.id)
+    if (unfit) toast(`Ojo: ${unfit.reason}`)
     onApply(
       replace ? items.map((x) => (x.id === replace.id ? g : x)) : [...items, g],
       replace ? `Cambiaste ${name(replace)} por ${name(g)}` : `Agregaste ${name(g)}`,
     )
+  }
   const removable = !!replace && canRemoveCategory(category, ctx)
   return (
     <AlternativesPicker

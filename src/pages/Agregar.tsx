@@ -4,7 +4,7 @@ import { GarmentForm, type GarmentFormSubmit } from '../components/GarmentForm'
 import { useRepository } from '../components/RepositoryContext'
 import { useToast } from '../components/ToastProvider'
 import { useAiTagging } from '../components/useAiTagging'
-import { queueCutout, useBackgroundRemover } from '../cutout'
+import { finishCutoutAfterSave, useBackgroundRemover } from '../cutout'
 
 /** Una foto de la cola: tiene su propio estado de IA, así que cada foto se etiqueta de a una. */
 function PhotoReview({
@@ -24,7 +24,7 @@ function PhotoReview({
   const remover = useBackgroundRemover()
   const { onPhotoChange, suggestion, aiSlot } = useAiTagging()
 
-  async function save({ data, newPhoto }: GarmentFormSubmit) {
+  async function save({ data, newPhoto, providedCutout }: GarmentFormSubmit) {
     const photo_path = newPhoto ? await repo.savePhoto(newPhoto) : null
     let garment
     try {
@@ -34,7 +34,7 @@ function PhotoReview({
       throw e
     }
     // Recorte sin fondo en segundo plano: no bloquea el guardado ni la cola.
-    if (photo_path) void queueCutout(repo, remover, garment, suggestion?.values.bbox)
+    if (photo_path) await finishCutoutAfterSave(repo, remover, garment, { providedCutout, bbox: suggestion?.values.bbox })
     onSaved()
   }
 
@@ -73,7 +73,7 @@ export default function AgregarPage() {
   const [index, setIndex] = useState(0)
   const [savedCount, setSavedCount] = useState(0)
 
-  async function save({ data, newPhoto }: GarmentFormSubmit) {
+  async function save({ data, newPhoto, providedCutout }: GarmentFormSubmit) {
     const photo_path = newPhoto ? await repo.savePhoto(newPhoto) : null
     let garment
     try {
@@ -82,7 +82,7 @@ export default function AgregarPage() {
       if (photo_path) await repo.deletePhoto(photo_path)
       throw e
     }
-    if (photo_path) void queueCutout(repo, remover, garment, suggestion?.values.bbox)
+    if (photo_path) await finishCutoutAfterSave(repo, remover, garment, { providedCutout, bbox: suggestion?.values.bbox })
     toast('Prenda guardada')
     navigate('/armario')
   }

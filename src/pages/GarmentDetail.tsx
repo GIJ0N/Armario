@@ -7,7 +7,7 @@ import { CutoutControls } from '../components/CutoutControls'
 import { useRepository } from '../components/RepositoryContext'
 import { SkeletonBlock } from '../components/Skeleton'
 import { useToast } from '../components/ToastProvider'
-import { queueCutout, useBackgroundRemover } from '../cutout'
+import { finishCutoutAfterSave, useBackgroundRemover } from '../cutout'
 import type { Garment } from '../db'
 
 export default function GarmentDetailPage() {
@@ -38,7 +38,7 @@ export default function GarmentDetailPage() {
     )
   }
 
-  async function save({ data, newPhoto, removePhoto }: GarmentFormSubmit) {
+  async function save({ data, newPhoto, removePhoto, providedCutout }: GarmentFormSubmit) {
     let photo_path = data.photo_path
     if (newPhoto) photo_path = await repo.savePhoto(newPhoto)
     else if (removePhoto) photo_path = null
@@ -51,7 +51,7 @@ export default function GarmentDetailPage() {
     }
     toast('Cambios guardados')
     // La foto nueva invalida el recorte anterior: se rehace en segundo plano.
-    if (newPhoto && photo_path) void queueCutout(repo, remover, updated)
+    if (newPhoto && photo_path) await finishCutoutAfterSave(repo, remover, updated, { providedCutout })
     navigate('/armario')
   }
 

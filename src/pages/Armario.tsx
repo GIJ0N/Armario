@@ -1,6 +1,7 @@
 import { Heart, Plus, Search, Shirt, WashingMachine } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { subscribeCutoutChanged } from '../cutout/events'
 import { GarmentPhoto } from '../components/GarmentPhoto'
 import { OutfitEditorSheet } from '../components/OutfitEditorSheet'
 import { SavedOutfitsList } from '../components/SavedOutfitsList'
@@ -65,6 +66,17 @@ export default function ArmarioPage() {
       cancelled = true
     }
   }, [repo, category, statusFilter])
+
+  // Un recorte que termina en segundo plano aparece sin tener que volver a entrar.
+  useEffect(
+    () =>
+      subscribeCutoutChanged((id) => {
+        void repo.get(id).then((fresh) => {
+          if (fresh) setGarments((cur) => cur?.map((g) => (g.id === id ? fresh : g)) ?? cur)
+        })
+      }),
+    [repo],
+  )
 
   async function toggleLaundry(g: Garment) {
     setError(null)

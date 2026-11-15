@@ -1,6 +1,7 @@
 import type { BBox } from '../ai/provider'
 import type { CutoutKind, Garment, Repository } from '../db'
 import { checkOnFirstUse, hasCrashed, isSkipped, withInFlight } from './crashGuard'
+import { notifyCutoutChanged } from './events'
 import { cropToBBoxBlob } from './imageOps'
 import { CUTOUT_TIMEOUT_MS } from './modelConfig'
 import { CutoutError, type BackgroundRemover, type CutoutEngine } from './types'
@@ -101,6 +102,7 @@ export async function createCutoutFor(
   const attempt = await generateCutout(photo, { garmentId: garment.id, ...opts })
   if (!attempt.result) return { garment, ...attempt }
   const updated = await repo.setCutout(garment.id, attempt.result.blob, attempt.result.kind)
+  notifyCutoutChanged(garment.id)
   return { garment: updated, ...attempt }
 }
 
