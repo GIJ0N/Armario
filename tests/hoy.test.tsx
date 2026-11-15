@@ -74,6 +74,24 @@ describe('pantalla Hoy', () => {
     expect(repo.saved.every((o) => o.source === 'rules' && o.occasion === 'office' && o.weather_snapshot?.tempC === 22)).toBe(true)
   })
 
+  it('los 3 outfits van en un carrusel con lienzo, puntos y contador 1/3', async () => {
+    stubNetwork()
+    renderHoy(fakeRepo())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sugerir outfits' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'Sugerir outfits' }))
+    const cards = await screen.findAllByTestId('outfit-card')
+    expect(cards).toHaveLength(3)
+    const carousel = screen.getByTestId('outfit-carousel')
+    for (const c of cards) {
+      expect(carousel).toContainElement(c)
+      expect(c.querySelector('.outfit-canvas .mannequin')).toBeInTheDocument()
+      expect(within(c).getByRole('button', { name: 'Me lo pongo' })).toBeInTheDocument()
+    }
+    expect(screen.getAllByTestId('carousel-dot')).toHaveLength(3)
+    expect(screen.getAllByTestId('carousel-dot')[0]).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByTestId('carousel-count')).toHaveTextContent('1/3')
+  })
+
   it('"Otras opciones" muestra combinaciones distintas', async () => {
     stubNetwork()
     renderHoy(fakeRepo())

@@ -41,7 +41,7 @@ SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción
 
 ## Estado
 
-Fase actual: 9 completada; siguiente: 10–12 (plan Armario v2)
+Fase actual: 11 completada; siguiente: 12 (plan Armario v2)
 
 ## Gusto
 
@@ -59,7 +59,7 @@ Cada outfit se califica con 👍/👎 y motivos (`feedback`, una por outfit). El
 - Tipografía: Fraunces (variable, solo latin, `@fontsource-variable/fraunces`, empaquetada y precacheada por el service worker) para títulos y cifras; fuente del sistema para el cuerpo.
 - Iconos: `lucide-react` importados uno por uno; nunca emojis como iconos.
 - Navegación: 5 pestañas (Hoy, Armario, «Agregar» central, Comprar, Yo). `/yo` reúne el resumen de uso y enlaces a `/uso` y `/ajustes`; la pestaña Yo está activa en las tres rutas.
-- `OutfitVisual` aísla el área de fotos de `OutfitCard` (la fase 11 la sustituye por el maniquí). Las fotos de prendas siempre con `object-fit: contain` sobre `--surface-photo`.
+- `OutfitVisual` es el único punto de entrada del área visual de un outfit: dibuja el lienzo con maniquí (ver «Lienzo») o, sin prenda de arriba ni de abajo, la cuadrícula de miniaturas anterior. En Hoy las tres tarjetas van en `OutfitCarousel` (scroll-snap, un outfit por vista, puntos y contador «1/3»). Las fotos de prendas siempre con `object-fit: contain` sobre `--surface-photo`.
 - Diálogos = `BottomSheet` (hoja inferior: Escape, fondo, foco atrapado y devuelto, `aria-modal`); `ConfirmDialog` la usa. Avisos breves con `ToastProvider`/`useToast` (sin proveedor no hacen nada). Carga con `Skeleton*`.
 - Agregar admite varias fotos: cola secuencial (una foto reducida y etiquetada a la vez, «Foto 2 de 5», se puede omitir).
 
@@ -74,3 +74,14 @@ Cada prenda puede tener un recorte sin fondo (`src/cutout/`) para el maniquí de
 - **Orden de respaldo** (`generateCutout` en `pipeline.ts`): (1) máscara con el modelo, solo si ya está descargado y dentro de 90 s; (2) plan B: recorte rectangular con el `bbox` opcional {x,y,w,h} normalizado 0–1 que propone Gemini (`TAG_GARMENT_JSON_SCHEMA`; validado con zod, si es inválido se ignora sin error); (3) sin recorte: la interfaz usa la original. Todo trabajo de recorte pasa por `runExclusive` (uno a la vez).
 - **Pruebas**: se inyecta `MockBackgroundRemover` con `BackgroundRemoverContextProvider` (como `AiProviderContext`); ninguna prueba ni e2e carga el modelo real.
 - **UI**: `GarmentPhoto` acepta `cutoutPath` y `variant`; `CutoutControls` (detalle: «Sin fondo / Original», «Rehacer recorte») y `CutoutSettings` (Ajustes: modelo, motor, «Procesar prendas sin recorte», «Probar recorte» con milisegundos y motor usado).
+
+## Lienzo
+
+Cada outfit se ve sobre un maniquí neutro (`OutfitCanvas`, usado por `OutfitVisual`; también en los ejemplos de Comprar con `size="small"`). Determinista, sin IA, sin red y sin tocar la base.
+
+- **Diseño** (`src/canvas/layout.ts`, función pura `layoutOutfit` probada en `tests/canvasLayout.test.ts`): viewBox 320×600, maniquí de frente centrado en `CX`. Cada prenda recibe una caja `{x,y,w,h,z,zone,framed}` en unidades del viewBox; el componente la coloca en porcentajes, así que escala con el contenedor. `fitContain` ajusta la imagen a su zona sin deformarla (arriba/abajo/centro); sin relación de aspecto conocida se usa `DEFAULT_ASPECT` por categoría.
+- **Zonas**: top = torso (anclado arriba); bottom = cadera a tobillos (subcategoría con short/bermuda/falda: solo a rodillas); shoes = pies, un par centrado anclado abajo; outerwear = sobre el torso y más ancho. Con abrigo y top a la vez, el abrigo queda debajo y el top se superpone en una columna central angosta (`torso-center`, «abrigo abierto») para que siga visible. Accesorios por palabras clave de la subcategoría (`accessoryKind`): gorra/sombrero/gorro → cabeza; lentes/gafas → cara; bufanda/corbata → cuello; reloj/pulsera → muñeca; cinturón → cintura (sobre top y bottom); mochila, bolsa y lo demás → columnas laterales (derecha primero).
+- **Imágenes**: solo el recorte `cutout_kind === 'mask'` se pinta como `<img>` sin marco; un recorte `bbox`, la foto original o la ausencia de foto usan un mosaico cuadrado enmarcado (`.canvas-tile`, centrado en su zona; con icono de lucide si no hay foto) para no cubrir el cuerpo con un rectángulo. La carga usa `useGarmentImages` / `useGarmentImage` (`src/components/useGarmentImage.ts`): URL de objeto desde `repo.getPhoto` más tamaño natural; `GarmentPhoto` no cambia.
+- **Interacción**: cada prenda colocada es un `<button aria-label=nombre>`; debajo hay una fila de chips con los nombres. Ambos llaman a `onSelectGarment(id)` (opcional; la fase 12 abrirá el editor).
+- **Respaldo**: `canRenderCanvas` exige al menos una prenda de arriba o de abajo; si no, `OutfitVisual` usa la cuadrícula.
+- **Colores**: el maniquí y el panel usan solo tokens (`--text`, `--surface-photo`, …), por lo que funcionan en ambos temas y en modo oscuro.

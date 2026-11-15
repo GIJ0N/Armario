@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAi } from '../ai/AiProviderContext'
 import type { AiProvider } from '../ai/provider'
 import { OutfitCard } from '../components/OutfitCard'
+import { OutfitCarousel } from '../components/OutfitCarousel'
 import { useRepository } from '../components/RepositoryContext'
 import { useToast } from '../components/ToastProvider'
 import { OCCASIONS, OCCASION_LABELS, type FeedbackEntry, type Garment, type Occasion, type Rating } from '../db'
@@ -293,7 +294,7 @@ export default function HoyPage() {
               {w}
             </p>
           ))}
-          <ul className="outfits">
+          <OutfitCarousel>
             {suggestions.outfits.map((o) => (
               <OutfitCard
                 key={o.outfitId ?? o.garmentIds.join('|')}
@@ -307,7 +308,7 @@ export default function HoyPage() {
                 onRate={o.outfitId ? (rating, tags, comment) => rate(o, rating, tags, comment) : undefined}
               />
             ))}
-          </ul>
+          </OutfitCarousel>
           {suggestions.outfits.length > 0 && (
             <button type="button" className="btn btn-block" disabled={busy} onClick={() => void run(true)}>
               {busy ? 'Buscando…' : 'Otras opciones'}
