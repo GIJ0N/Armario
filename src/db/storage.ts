@@ -4,6 +4,8 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 export interface Storage {
   loadSnapshot(): Promise<Uint8Array | null>
   saveSnapshot(bytes: Uint8Array): Promise<void>
+  /** Guarda una copia aparte (p. ej. antes de migrar); no reemplaza la instantánea principal. */
+  saveBackupSnapshot(label: string, bytes: Uint8Array): Promise<void>
   putPhoto(key: string, blob: Blob): Promise<void>
   getPhoto(key: string): Promise<Blob | null>
   deletePhoto(key: string): Promise<void>
@@ -35,6 +37,10 @@ export class IndexedDbStorage implements Storage {
 
   async saveSnapshot(bytes: Uint8Array) {
     await (await this.dbPromise).put('snapshot', bytes, SNAPSHOT_KEY)
+  }
+
+  async saveBackupSnapshot(label: string, bytes: Uint8Array) {
+    await (await this.dbPromise).put('snapshot', bytes, `backup:${label}`)
   }
 
   async putPhoto(key: string, blob: Blob) {

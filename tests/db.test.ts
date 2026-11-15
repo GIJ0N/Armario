@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { SqliteGarmentRepository } from '../src/db/repository'
 import { IndexedDbStorage } from '../src/db/storage'
 import { getSqliteStatic, runMigrations } from '../src/db/sqlite'
+import { MIGRATIONS } from '../src/db/migrations'
+import { openDB } from 'idb'
 import { garmentInputSchema, type GarmentInput } from '../src/db/types'
 
 const base: GarmentInput = { category: 'top', formality: 3, warmth: 2 }
@@ -155,5 +157,25 @@ describe('migración 0002 y OutfitRepository', () => {
     expect(noWeather.weather_snapshot).toBeNull()
     expect((await repo.outfits.listRecent(14))[0].id).toBe(noWeather.id)
     repo.close()
+  })
+})
+
+describe('respaldo antes de migrar', () => {
+  it('guarda una copia de la base vieja antes de aplicar migraciones pendientes', async () => {
+    const sqlite3 = await getSqliteStatic()
+    const old = new sqlite3.oo1.DB(':memory:', 'c')
+    runMigrations(old, MIGRATIONS.slice(0, 1))
+    const oldBytes = sqlite3.capi.sqlite3_js_db_export(old.pointer!)
+    old.close()
+
+    const storage = new IndexedDbStorage('test-armario')
+    await storage.saveSnapshot(oldBytes)
+    const repo = await SqliteGarmentRepository.open(storage)
+    await repo.list()
+
+    const idb = await openDB('test-armario', 1)
+    const backup = (await idb.get('snapshot', 'backup:pre-migration-v1')) as Uint8Array | undefined
+    expect(backup?.byteLength).toBe(oldBytes.byteLength)
+    idb.close()
   })
 })
