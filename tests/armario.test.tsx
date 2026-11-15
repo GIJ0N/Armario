@@ -64,6 +64,7 @@ function createFakeRepo(): Repository & { items: Garment[] } {
       return g
     },
     setFavorite: async (id, favorite) => Object.assign(items.find((g) => g.id === id)!, { favorite }),
+    setCanvasAdjust: async (id, adj) => Object.assign(items.find((g) => g.id === id)!, { canvas_adjust: adj }),
     delete: async (id) => {
       items.splice(items.findIndex((g) => g.id === id), 1)
     },

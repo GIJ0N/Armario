@@ -1,3 +1,4 @@
+import { normalizeGarmentAdjust } from '../../src/canvas/adjust'
 import { garmentInputSchema, type FeedbackEntry, type Garment, type Outfit, type Repository, type Wear, type WearEntry } from '../../src/db'
 import { computeWearStats } from '../../src/db/wearStats'
 import { addDays, localDateString } from '../../src/lib/date'
@@ -75,6 +76,11 @@ export function fakeRepo(initial: Garment[] = wardrobe30) {
     setFavorite: async (id, favorite) => {
       const g = garments.find((x) => x.id === id)!
       g.favorite = favorite
+      return g
+    },
+    setCanvasAdjust: async (id, adj) => {
+      const g = garments.find((x) => x.id === id)!
+      g.canvas_adjust = normalizeGarmentAdjust(adj)
       return g
     },
     setStatus: async (id, status) => {

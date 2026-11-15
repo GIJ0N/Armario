@@ -34,7 +34,7 @@ describe('migración 0006', () => {
     db.exec("INSERT INTO feedback (id, outfit_id, rating, tags, comment, created_at) VALUES ('f1','o1','like','[]','','now')")
 
     expect(runMigrations(db)).toBe(true)
-    expect(Number(db.selectValue('PRAGMA user_version'))).toBe(6)
+    expect(Number(db.selectValue('PRAGMA user_version'))).toBe(7)
     expect(db.selectObjects('SELECT id, favorite FROM garments ORDER BY id')).toEqual([
       { id: 'g1', favorite: 0 },
       { id: 'g2', favorite: 0 },

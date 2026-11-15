@@ -1,3 +1,4 @@
+import { layoutsEqual, pruneLayout, type OutfitLayout } from '../canvas/adjust'
 import type { NewOutfitSwap, Occasion, Outfit, Repository } from '../db'
 import type { Weather } from '../engine'
 
@@ -50,11 +51,15 @@ export interface EditResult {
 export async function commitOutfitEdit(repo: Repository, params: EditParams): Promise<EditResult> {
   const { original, baseIds, next, categoryOf } = params
   const reasoning = next.reasoning ?? (baseIds.length ? EDITED_REASONING : MANUAL_REASONING)
+  // Ajustes de lienzo que se conservan: solo los de prendas que siguen en el outfit.
+  const carried = pruneLayout(original?.canvas_layout, next.garmentIds)
   let outfit: Outfit
   let createdNew: boolean
   if (original && !(await repo.outfits.hasHistory(original.id))) {
     outfit = await repo.outfits.updateItems(original.id, { garmentIds: next.garmentIds, reasoning, occasion: next.occasion })
     createdNew = false
+    // Los ajustes de lienzo de prendas que ya no están se descartan.
+    if (!layoutsEqual(original.canvas_layout, carried)) outfit = await repo.outfits.setCanvasLayout(outfit.id, carried)
   } else {
     outfit = await repo.outfits.create({
       garment_ids: next.garmentIds,
@@ -64,6 +69,8 @@ export async function commitOutfitEdit(repo: Repository, params: EditParams): Pr
       source: 'manual',
     })
     createdNew = true
+    // Los ajustes de lienzo de las prendas que se conservan pasan a la fila nueva.
+    if (carried) outfit = await repo.outfits.setCanvasLayout(outfit.id, carried)
     if (original?.saved_at) {
       outfit = await repo.outfits.save(outfit.id, original.name ?? undefined)
       await repo.outfits.unsave(original.id)
@@ -77,7 +84,7 @@ export async function commitOutfitEdit(repo: Repository, params: EditParams): Pr
 /** «Crear outfit»: arma un outfit manual desde cero y lo deja guardado en Armario › Outfits. */
 export async function createManualOutfit(
   repo: Repository,
-  params: { garmentIds: string[]; occasion: Occasion; name?: string; categoryOf: (id: string) => string | undefined },
+  params: { garmentIds: string[]; occasion: Occasion; name?: string; canvasLayout?: OutfitLayout | null; categoryOf: (id: string) => string | undefined },
 ): Promise<Outfit> {
   const { outfit } = await commitOutfitEdit(repo, {
     original: null,
@@ -85,5 +92,7 @@ export async function createManualOutfit(
     next: { garmentIds: params.garmentIds, occasion: params.occasion, weather: null },
     categoryOf: params.categoryOf,
   })
+  const layout = pruneLayout(params.canvasLayout, params.garmentIds)
+  if (layout) await repo.outfits.setCanvasLayout(outfit.id, layout)
   return repo.outfits.save(outfit.id, params.name)
 }

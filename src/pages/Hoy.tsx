@@ -2,6 +2,7 @@ import { Cloud, CloudRain, Heart, RotateCcw, SlidersHorizontal, Sparkles, Sun } 
 import { useEffect, useRef, useState } from 'react'
 import { useAi } from '../ai/AiProviderContext'
 import type { AiProvider } from '../ai/provider'
+import { pruneLayout, type AdjustChange, type OutfitLayout } from '../canvas/adjust'
 import { LaundrySheet } from '../components/LaundrySheet'
 import { subscribeCutoutChanged } from '../cutout/events'
 import { OutfitEditFlow, type EditTarget } from '../components/OutfitEditFlow'
@@ -28,7 +29,13 @@ import {
 type WeatherState = { status: 'loading' } | { status: 'ready'; result: WeatherResult | null }
 
 /** Sugerencia mostrada; `outfitId` es la fila guardada (null si no se pudo guardar). */
-type ShownOutfit = CardOutfit & { outfitId: string | null; saved: boolean; name: string | null }
+type ShownOutfit = CardOutfit & {
+  outfitId: string | null
+  saved: boolean
+  name: string | null
+  /** Ajustes manuales del lienzo (fase 13a); se guardan con la fila del outfit o, si aún no existe, al guardarlo. */
+  canvasLayout: OutfitLayout | null
+}
 
 interface Suggestions {
   outfits: ShownOutfit[]
@@ -71,6 +78,7 @@ export default function HoyPage() {
   const [editing, setEditing] = useState<{ key: string; target: EditTarget } | null>(null)
   const [saving, setSaving] = useState<ShownOutfit | null>(null)
   const [laundryFor, setLaundryFor] = useState<ShownOutfit | null>(null)
+  const [adjustingKey, setAdjustingKey] = useState<string | null>(null)
   const runId = useRef(0)
   /** Outfits ya mostrados en esta sesión (solo en memoria): «Otras opciones» no los repite. */
   const shown = useRef<string[][]>([])
@@ -164,7 +172,7 @@ export default function HoyPage() {
         provider,
       )
       const warnings = [...res.warnings]
-      const outfits: ShownOutfit[] = res.outfits.map((o) => ({ ...o, outfitId: null, saved: false, name: null }))
+      const outfits: ShownOutfit[] = res.outfits.map((o) => ({ ...o, outfitId: null, saved: false, name: null, canvasLayout: null }))
       try {
         for (const o of outfits) {
           const saved = await repo.outfits.create({
@@ -230,7 +238,7 @@ export default function HoyPage() {
     const ids = next.map((g) => g.id)
     setEditing(null)
     // Vista previa inmediata; si falla el guardado se muestra un aviso y se conserva lo editado.
-    replaceOutfit(key, { ...o, garmentIds: ids, source: 'manual' })
+    replaceOutfit(key, { ...o, garmentIds: ids, source: 'manual', canvasLayout: pruneLayout(o.canvasLayout, ids) })
     try {
       const original = o.outfitId ? await repo.outfits.get(o.outfitId) : null
       const { outfit, createdNew } = await commitOutfitEdit(repo, {
@@ -260,6 +268,7 @@ export default function HoyPage() {
         outfitId: outfit.id,
         saved: !!outfit.saved_at,
         name: outfit.name ?? null,
+        canvasLayout: outfit.canvas_layout ?? pruneLayout(o.canvasLayout, ids),
       })
       toast(summary)
     } catch (e) {
@@ -280,6 +289,7 @@ export default function HoyPage() {
         source: o.source === 'ia' ? 'ai' : o.source === 'manual' ? 'manual' : 'rules',
       })
       id = created.id
+      if (o.canvasLayout) await repo.outfits.setCanvasLayout(id, o.canvasLayout)
     }
     const saved = await repo.outfits.save(id, name || undefined)
     replaceOutfit(outfitKey(o), { ...o, outfitId: saved.id, saved: true, name: saved.name ?? null })
@@ -295,6 +305,29 @@ export default function HoyPage() {
       toast('Quitado de guardados')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo actualizar.')
+    }
+  }
+
+  /** «Listo» del modo Ajustar: se ve al instante y luego se guarda (outfit en su fila o en memoria; prendas al momento). */
+  async function adjustOutfit(o: ShownOutfit, change: AdjustChange) {
+    replaceOutfit(outfitKey(o), { ...o, canvasLayout: change.layout })
+    const garmentIds = Object.keys(change.garments)
+    if (garmentIds.length > 0) {
+      setSuggestions((cur) => {
+        if (!cur) return cur
+        const garments = new Map(cur.garments)
+        for (const id of garmentIds) {
+          const g = garments.get(id)
+          if (g) garments.set(id, { ...g, canvas_adjust: change.garments[id] })
+        }
+        return { ...cur, garments }
+      })
+    }
+    try {
+      if (o.outfitId) await repo.outfits.setCanvasLayout(o.outfitId, change.layout)
+      for (const id of garmentIds) await repo.setCanvasAdjust(id, change.garments[id])
+    } catch {
+      setError('No se pudo guardar el ajuste del lienzo.')
     }
   }
 
@@ -446,7 +479,7 @@ export default function HoyPage() {
               {w}
             </p>
           ))}
-          <OutfitCarousel>
+          <OutfitCarousel locked={adjustingKey !== null}>
             {suggestions.outfits.map((o) => (
               <OutfitCard
                 key={o.outfitId ?? o.garmentIds.join('|')}
@@ -463,6 +496,10 @@ export default function HoyPage() {
                 saved={o.saved}
                 onToggleSave={() => (o.saved ? void unsaveOutfit(o) : setSaving(o))}
                 onLaundry={() => setLaundryFor(o)}
+                layout={o.canvasLayout}
+                onAdjustSave={(change) => adjustOutfit(o, change)}
+                onAdjustingChange={(a) => setAdjustingKey((cur) => (a ? outfitKey(o) : cur === outfitKey(o) ? null : cur))}
+                shareable
               />
             ))}
           </OutfitCarousel>

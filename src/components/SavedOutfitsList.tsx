@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { OCCASION_LABELS, type Garment, type SavedOutfit } from '../db'
 import { commitOutfitEdit } from '../outfits/edit'
 import { localDateString } from '../lib/date'
+import { pruneLayout, layoutsEqual, type AdjustChange } from '../canvas/adjust'
 import { LaundrySheet } from './LaundrySheet'
+import { OutfitAdjustSheet } from './OutfitAdjustSheet'
 import { OutfitEditorSheet, type EditorValue } from './OutfitEditorSheet'
 import { OutfitVisual } from './OutfitVisual'
 import { useRepository } from './RepositoryContext'
@@ -32,6 +34,7 @@ export function SavedOutfitsList({ reloadKey = 0 }: Props) {
   const [garments, setGarments] = useState<Garment[]>([])
   const [wears, setWears] = useState<WearRecord[]>([])
   const [editing, setEditing] = useState<SavedOutfit | null>(null)
+  const [adjusting, setAdjusting] = useState<SavedOutfit | null>(null)
   const [laundry, setLaundry] = useState<Garment[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -107,9 +110,25 @@ export function SavedOutfitsList({ reloadKey = 0 }: Props) {
       })
       id = outfit.id
     }
+    // Ajustes de lienzo editados en la hoja (la fila nueva ya arrastra los de las prendas que se conservan).
+    const layout = pruneLayout(value.canvasLayout, value.garmentIds)
+    const current = id === s.outfit.id ? s.outfit.canvas_layout : (await repo.outfits.get(id))?.canvas_layout
+    if (!layoutsEqual(current, layout)) await repo.outfits.setCanvasLayout(id, layout)
     await repo.outfits.save(id, value.name || undefined)
     setEditing(null)
     toast('Outfit actualizado')
+    await load()
+  }
+
+  async function saveAdjust(s: SavedOutfit, change: AdjustChange) {
+    setAdjusting(null)
+    try {
+      await repo.outfits.setCanvasLayout(s.outfit.id, change.layout)
+      for (const [id, adj] of Object.entries(change.garments)) await repo.setCanvasAdjust(id, adj)
+      toast('Ajuste guardado')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar el ajuste.')
+    }
     await load()
   }
 
@@ -141,7 +160,13 @@ export function SavedOutfitsList({ reloadKey = 0 }: Props) {
             return (
               <li key={s.outfit.id} className="saved-card" data-testid="saved-outfit">
                 <div className="saved-canvas">
-                  <OutfitVisual items={items} size="small" />
+                  <OutfitVisual
+                    items={items}
+                    size="small"
+                    layout={s.outfit.canvas_layout}
+                    onAdjustRequest={() => setAdjusting(s)}
+                    shareable
+                  />
                 </div>
                 <div className="saved-info">
                   <strong className="saved-name" data-testid="saved-name">
@@ -174,10 +199,23 @@ export function SavedOutfitsList({ reloadKey = 0 }: Props) {
           garments={garments}
           wears={wears}
           today={localDateString()}
-          initial={{ garmentIds: editing.outfit.garment_ids, occasion: editing.outfit.occasion, name: editing.outfit.name ?? '' }}
+          initial={{
+            garmentIds: editing.outfit.garment_ids,
+            occasion: editing.outfit.occasion,
+            name: editing.outfit.name ?? '',
+            canvasLayout: editing.outfit.canvas_layout,
+          }}
           saveLabel="Guardar cambios"
           onSave={(value) => saveEdit(editing, value)}
           onClose={() => setEditing(null)}
+        />
+      )}
+      {adjusting && (
+        <OutfitAdjustSheet
+          items={itemsOf(adjusting)}
+          layout={adjusting.outfit.canvas_layout}
+          onSave={(change) => saveAdjust(adjusting, change)}
+          onClose={() => setAdjusting(null)}
         />
       )}
       {laundry && <LaundrySheet items={laundry} onConfirm={sendToLaundry} onClose={() => setLaundry(null)} />}
