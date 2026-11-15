@@ -49,6 +49,12 @@
   --backdrop: rgb(10 10 10 / 45%);
   --bar-bg: rgb(255 255 255 / 93%);
 
+  /* Lienzo: maniquí y borde de los recortes (derivados de --text y --surface-photo, por eso sirven en ambos temas). */
+  --mannequin-fill: color-mix(in srgb, var(--text) 13%, var(--surface-photo));
+  --cutout-edge: color-mix(in srgb, var(--text) 38%, transparent);
+  --cutout-shadow: color-mix(in srgb, var(--text) 28%, transparent);
+  --tile-frame: var(--surface);
+
   --ok: #17663c;
   --ok-soft: #dff3e7;
   --warn: #8a5300;
@@ -101,6 +107,12 @@
     --shadow-l: 0 -10px 40px rgb(0 0 0 / 60%);
     --backdrop: rgb(0 0 0 / 62%);
     --bar-bg: rgb(24 24 26 / 93%);
+
+    /* Modo oscuro: maniquí gris medio-claro para que la ropa oscura se lea; borde claro fino en los recortes. */
+    --mannequin-fill: color-mix(in srgb, var(--text) 52%, var(--surface-photo));
+      --cutout-edge: color-mix(in srgb, var(--text) 70%, transparent);
+    --cutout-shadow: color-mix(in srgb, var(--bg) 70%, transparent);
+    --tile-frame: color-mix(in srgb, var(--text) 90%, var(--surface-photo));
 
     --ok: #6fd69b;
     --ok-soft: #14301f;
@@ -459,7 +471,7 @@ button { -webkit-appearance: none; appearance: none; }
 .outfit-canvas[data-size='small'] .canvas-panel { height: 300px; }
 .canvas-stage { position: relative; height: 100%; max-width: 100%; }
 .mannequin { position: absolute; inset: 0; width: 100%; height: 100%; }
-.mannequin-body { fill: color-mix(in srgb, var(--text) 15%, var(--surface-photo)); }
+.mannequin-body { fill: var(--mannequin-fill); }
 .mannequin-ground { fill: color-mix(in srgb, var(--text) 10%, transparent); }
 .canvas-garment {
   position: absolute; display: flex; align-items: center; justify-content: center; padding: 0; margin: 0;
@@ -468,13 +480,18 @@ button { -webkit-appearance: none; appearance: none; }
 .canvas-garment:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-s); }
 .canvas-cutout {
   width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none;
-  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 30%));
+  filter: drop-shadow(0 0 0.7px var(--cutout-edge)) drop-shadow(0 2px 3px var(--cutout-shadow));
 }
 .canvas-tile {
-  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden;
-  border-radius: var(--radius-m); background: var(--surface); border: 2px solid var(--surface); box-shadow: var(--shadow-m);
+  position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  border-radius: var(--radius-m); background: var(--tile-frame); border: 4px solid var(--tile-frame); box-shadow: var(--shadow-m);
 }
-.canvas-tile img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
+/* Foto «prendida»: marco blanco suave con un alfiler pequeño arriba. */
+.canvas-tile::after {
+  content: ''; position: absolute; top: 5px; left: 50%; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 1px 2px var(--cutout-shadow);
+}
+.canvas-tile img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; border-radius: calc(var(--radius-m) - 4px); }
 .canvas-tile svg { width: 45%; height: 45%; opacity: 0.6; }
 .canvas-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .chip-small { min-height: 32px; padding: 4px 12px; font-size: 0.82rem; }
