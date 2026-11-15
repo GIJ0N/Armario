@@ -1,3 +1,4 @@
+import { Camera, Images, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   CATEGORIES,
@@ -40,9 +41,13 @@ interface Props {
   aiSlot?: ReactNode
   /** Estado fijo (p. ej. «candidata» en Comprar): oculta el selector de estado. */
   fixedStatus?: Status
+  /** Si se da, elegir varias fotos de la galería las entrega aquí (cola de Agregar) en vez de usar la primera. */
+  onPickFiles?: (files: File[]) => void
+  /** Foto ya elegida (cola de Agregar): se reduce y se procesa al abrir el formulario. */
+  initialFile?: File
 }
 
-export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, suggestion, aiSlot, fixedStatus }: Props) {
+export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, suggestion, aiSlot, fixedStatus, onPickFiles, initialFile }: Props) {
   const [category, setCategory] = useState<string>(initial?.category ?? '')
   const [subcategory, setSubcategory] = useState(initial?.subcategory ?? '')
   const [colors, setColors] = useState(initial?.colors.join(', ') ?? '')
@@ -89,6 +94,18 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
     if (!photo) return
     return () => URL.revokeObjectURL(photo.url)
   }, [photo])
+
+  useEffect(() => {
+    if (initialFile) void onFile(initialFile)
+    // Solo al abrir: cada foto de la cola monta su propio formulario.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function onGallery(files: FileList | null) {
+    const list = files ? [...files] : []
+    if (list.length > 1 && onPickFiles) onPickFiles(list)
+    else void onFile(list[0])
+  }
 
   async function onFile(file: File | undefined) {
     if (!file) return
@@ -142,20 +159,25 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
 
   return (
     <form className="garment-form" onSubmit={handleSubmit} noValidate>
-      <div className="photo-box">
+      <div className={`photo-box${previewUrl || hasExisting ? '' : ' photo-box-empty'}`}>
         {previewUrl ? (
           <img className="garment-img" src={previewUrl} alt="Vista previa de la foto" />
         ) : hasExisting ? (
           <GarmentPhoto photoPath={initial.photo_path} alt="Foto de la prenda" />
         ) : (
-          <div className="photo-placeholder" aria-hidden="true">📷</div>
+          <div className="photo-empty">
+            <Camera size={40} strokeWidth={1.4} aria-hidden="true" />
+            <p>{onPickFiles ? 'Toma una foto o elige varias de la galería.' : 'Agrega una foto de la prenda.'}</p>
+          </div>
         )}
       </div>
       <div className="photo-actions">
         <button type="button" className="btn" onClick={() => cameraRef.current?.click()}>
+          <Camera size={18} aria-hidden="true" />
           Tomar foto
         </button>
         <button type="button" className="btn" onClick={() => galleryRef.current?.click()}>
+          <Images size={18} aria-hidden="true" />
           Elegir de la galería
         </button>
         {(hasExisting || newPhoto) && (
@@ -175,7 +197,8 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
       {aiSlot}
       {aiFields && (
         <p className="ai-note" data-testid="ai-suggested">
-          ✨ Sugeridos por IA: revisa y corrige los campos antes de guardar.
+          <Sparkles size={16} className="icon" aria-hidden="true" />
+          <span>Sugeridos por IA: revisa y corrige los campos antes de guardar.</span>
         </p>
       )}
       <input
@@ -198,8 +221,9 @@ export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, sug
         hidden
         aria-label="Elegir foto de la galería"
         data-testid="gallery-input"
+        multiple={!!onPickFiles}
         onChange={(e) => {
-          void onFile(e.target.files?.[0])
+          onGallery(e.target.files)
           e.target.value = ''
         }}
       />

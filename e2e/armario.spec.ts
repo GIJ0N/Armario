@@ -4,6 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
 
+async function openFromMe(page: import('@playwright/test').Page, name: 'Uso' | 'Ajustes') {
+  await page.getByRole('link', { name: 'Yo' }).click()
+  await page.getByRole('link', { name: new RegExp(`^${name}`) }).click()
+}
+
 test('agregar, recargar, editar y eliminar una prenda', async ({ page }) => {
   // Imagen de prueba generada al vuelo (2000x1500, para comprobar el redimensionado).
   const file = join(mkdtempSync(join(tmpdir(), 'armario-e2e-')), 'prenda.jpg')
@@ -102,11 +107,11 @@ test('Hoy: sin API key sugiere un outfit por reglas con el clima simulado', asyn
   }
 
   // Antes de usar nada: 0% en Uso y el historial vacío.
-  await page.getByRole('link', { name: /Uso/ }).click()
+  await openFromMe(page, 'Uso')
   await expect(page.getByTestId('usage-percent')).toHaveText('0%')
   await expect(page.getByText(/Todavía no has usado ningún outfit/)).toBeVisible()
 
-  await page.getByRole('link', { name: /Hoy/ }).click()
+  await page.getByRole('link', { name: 'Hoy' }).click()
   await expect(page.getByTestId('weather-card')).toContainText('22°')
   await expect(page.getByTestId('weather-card')).toContainText('Lluvia 10%')
   await page.getByRole('button', { name: 'Sugerir outfits' }).click()
@@ -120,11 +125,11 @@ test('Hoy: sin API key sugiere un outfit por reglas con el clima simulado', asyn
   await cards.first().getByRole('button', { name: 'No me gusta' }).click()
   await cards.first().getByRole('button', { name: 'Muy formal' }).click()
   await cards.first().getByRole('button', { name: 'Guardar calificación' }).click()
-  await expect(cards.first().getByTestId('rating-saved')).toContainText('👎 No me gusta · Muy formal')
+  await expect(cards.first().getByTestId('rating-saved')).toContainText('No me gusta · Muy formal')
   await page.reload()
-  await page.getByRole('link', { name: /Ajustes/ }).click()
+  await openFromMe(page, 'Ajustes')
   await expect(page.getByTestId('taste-counts')).toContainText('Calificaciones: 1 (0 me gusta, 1 no me gusta)')
-  await page.getByRole('link', { name: /Hoy/ }).click()
+  await page.getByRole('link', { name: 'Hoy' }).click()
   await expect(page.getByTestId('weather-card')).toContainText('22°')
   await page.getByRole('button', { name: 'Sugerir outfits' }).click()
   await expect(cards.first()).toBeVisible()
@@ -132,12 +137,12 @@ test('Hoy: sin API key sugiere un outfit por reglas con el clima simulado', asyn
 
   // «Me lo pongo» -> aparece en Uso (historial y %), y sobrevive a una recarga.
   await cards.first().getByRole('button', { name: 'Me lo pongo' }).click()
-  await expect(cards.first().getByText('Puesto hoy ✓')).toBeVisible()
+  await expect(cards.first().getByText('Puesto hoy')).toBeVisible()
   await cards.first().getByRole('button', { name: 'Deshacer' }).click()
   await expect(cards.first().getByRole('button', { name: 'Me lo pongo' })).toBeVisible()
   await cards.first().getByRole('button', { name: 'Me lo pongo' }).click()
-  await expect(cards.first().getByText('Puesto hoy ✓')).toBeVisible()
-  await page.getByRole('link', { name: /Uso/ }).click()
+  await expect(cards.first().getByText('Puesto hoy')).toBeVisible()
+  await openFromMe(page, 'Uso')
   await expect(page.getByTestId('usage-percent')).toHaveText('100%')
   await expect(page.getByTestId('usage-count')).toHaveText('3 de 3 prendas activas')
   const entry = page.getByTestId('history-entry')
@@ -150,7 +155,7 @@ test('Hoy: sin API key sugiere un outfit por reglas con el clima simulado', asyn
   await expect(page.getByTestId('history-entry')).toHaveCount(1)
 
   // Con lo ya usado fuera de juego, la única combinación posible no se vuelve a sugerir.
-  await page.getByRole('link', { name: /Hoy/ }).click()
+  await page.getByRole('link', { name: 'Hoy' }).click()
   await page.getByRole('button', { name: 'Sugerir outfits' }).click()
   await expect(page.getByText(/No hay más combinaciones nuevas/)).toBeVisible()
   await expect(page.getByTestId('outfit-card')).toHaveCount(0)
@@ -276,7 +281,7 @@ test('Comprar: evaluar una candidata sin API key, ver el veredicto y comprarla',
   await expect(page.getByTestId('count')).toHaveText('4 prendas')
 
   // Uso: «Qué le falta» se calcula bajo demanda.
-  await page.getByRole('link', { name: /Uso/ }).click()
+  await openFromMe(page, 'Uso')
   await expect(page.getByTestId('wardrobe-gap')).toHaveCount(0)
   await page.getByRole('button', { name: 'Calcular' }).click()
   await expect(page.getByTestId('wardrobe-gap').first()).toContainText('desbloquearía')

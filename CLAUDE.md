@@ -41,7 +41,7 @@ SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción
 
 ## Estado
 
-Fase actual: 8 completada (fases 1 a 7 terminadas; v2 en curso: 9 a 13 en el plan «Armario v2»)
+Fase actual: 9 completada; siguiente: 10–12 (plan Armario v2)
 
 ## Gusto
 
@@ -52,3 +52,13 @@ Cada outfit se califica con 👍/👎 y motivos (`feedback`, una por outfit). El
 - `src/purchase/`: evaluador de compras, solo reglas y determinista. `duplicates` (≥2 activas con misma categoría, subcategoría, color principal y formalidad), `simulate` (outfits válidos que incluyen la candidata, por ocasión y en clima templado/calor/frío; sin prioridad de rotación ni repetidos), `verdict` (umbrales `buyMinOutfits` y `buyMinOccasions` en Ajustes/localStorage), `gaps` y `complements` (el motor simula cada complemento y calcula «desbloquea N»), `wardrobeGaps` («Qué le falta», bajo demanda en Uso).
 - La IA (`src/ai/prompts/purchaseGaps.ts`) solo redacta la explicación y propone complementos por atributos; sus números se ignoran, se recalculan con el motor y se eliminan enlaces y precios. Sin IA o con error se usa la versión por reglas.
 - Candidatas = `garments` con `status = candidate` (no entran al motor de Hoy). `repo.purchases` guarda la evaluación (migración 0004: veredicto `with_complements` y columna `details` JSON). «Lo compré» → `active`; «Descartar» borra prenda y foto tras el diálogo de confirmación.
+
+## Interfaz
+
+- Tokens en `src/index.css` (colores, superficies, radios, espacios, sombras, fuentes): ningún hexadecimal fuera de los bloques de tokens. Dos temas, «Neutro» y «Cálido», elegidos en Ajustes > Apariencia (`theme` en `localStorage`, validado en `loadSettings`) y aplicados como `data-theme` en `<html>` (`useApplyTheme`; `index.html` lo fija antes de pintar). El modo oscuro es automático (`prefers-color-scheme`) en ambos.
+- Tipografía: Fraunces (variable, solo latin, `@fontsource-variable/fraunces`, empaquetada y precacheada por el service worker) para títulos y cifras; fuente del sistema para el cuerpo.
+- Iconos: `lucide-react` importados uno por uno; nunca emojis como iconos.
+- Navegación: 5 pestañas (Hoy, Armario, «Agregar» central, Comprar, Yo). `/yo` reúne el resumen de uso y enlaces a `/uso` y `/ajustes`; la pestaña Yo está activa en las tres rutas.
+- `OutfitVisual` aísla el área de fotos de `OutfitCard` (la fase 11 la sustituye por el maniquí). Las fotos de prendas siempre con `object-fit: contain` sobre `--surface-photo`.
+- Diálogos = `BottomSheet` (hoja inferior: Escape, fondo, foco atrapado y devuelto, `aria-modal`); `ConfirmDialog` la usa. Avisos breves con `ToastProvider`/`useToast` (sin proveedor no hacen nada). Carga con `Skeleton*`.
+- Agregar admite varias fotos: cola secuencial (una foto reducida y etiquetada a la vez, «Foto 2 de 5», se puede omitir).

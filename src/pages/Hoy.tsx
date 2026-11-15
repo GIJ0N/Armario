@@ -1,8 +1,10 @@
+import { Cloud, CloudRain, RotateCcw, SlidersHorizontal, Sparkles, Sun } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAi } from '../ai/AiProviderContext'
 import type { AiProvider } from '../ai/provider'
 import { OutfitCard } from '../components/OutfitCard'
 import { useRepository } from '../components/RepositoryContext'
+import { useToast } from '../components/ToastProvider'
 import { OCCASIONS, OCCASION_LABELS, type FeedbackEntry, type Garment, type Occasion, type Rating } from '../db'
 import { daysBetween, NO_REPEAT_DAYS, suggestOutfits, type SuggestedOutfit, type Weather } from '../engine'
 import { localDateString } from '../lib/date'
@@ -42,6 +44,7 @@ export default function HoyPage() {
   const repo = useRepository()
   const ai = useAi()
   const [settings] = useSettings()
+  const toast = useToast()
   const [occasion, setOccasion] = useState<Occasion>('casual')
   const [weatherState, setWeatherState] = useState<WeatherState>({ status: 'loading' })
   const [manual, setManual] = useState<WeatherPresetKey | null>(null)
@@ -67,6 +70,12 @@ export default function HoyPage() {
   const loaded = weatherState.status === 'ready' ? weatherState.result : null
   const weather: Weather | null = manual ? WEATHER_PRESETS[manual] : (loaded?.weather ?? null)
   const showPresets = picking || (weatherState.status === 'ready' && !loaded && !manual)
+
+  function clearManual() {
+    setManual(null)
+    shown.current = []
+    setSuggestions(null)
+  }
 
   function pickOccasion(o: Occasion) {
     runId.current++
@@ -148,6 +157,7 @@ export default function HoyPage() {
       const today = localDateString()
       if (on) await repo.wears.create(o.outfitId, today)
       else await repo.wears.deleteForOutfitOnDate(o.outfitId, today)
+      toast(on ? 'Outfit marcado como usado' : 'Uso deshecho')
       setWorn((prev) => {
         const next = new Set(prev)
         if (on) next.add(o.outfitId!)
@@ -181,7 +191,7 @@ export default function HoyPage() {
     <section>
       <h1 className="page-title">Hoy</h1>
 
-      <div className="chips" role="group" aria-label="Ocasión">
+      <div className="chips chips-scroll" role="group" aria-label="Ocasión">
         {OCCASIONS.map((o) => (
           <button
             key={o}
@@ -198,32 +208,48 @@ export default function HoyPage() {
       <div className="weather-card" data-testid="weather-card">
         {weatherState.status === 'loading' && !manual && <p className="page-hint">Consultando el clima…</p>}
         {weather && (
-          <>
-            <div className="weather-main">
-              <strong className="weather-temp">{deg(weather.tempC)}</strong>
+          <div className="weather-row">
+            {weather.isRaining || weather.precipProbability >= 50 ? (
+              <CloudRain className="icon" size={26} aria-hidden="true" />
+            ) : weather.tempC < 16 ? (
+              <Cloud className="icon" size={26} aria-hidden="true" />
+            ) : (
+              <Sun className="icon" size={26} aria-hidden="true" />
+            )}
+            <strong className="weather-temp">{deg(weather.tempC)}</strong>
+            <div className="weather-detail">
               <span>
                 Mín {deg(weather.tempMinC)} · Máx {deg(weather.tempMaxC)}
               </span>
-              <span>
-                Lluvia {Math.round(weather.precipProbability)}%{weather.isRaining ? ' (llueve ahora)' : ''}
+              <span className="muted weather-note">
+                Lluvia {Math.round(weather.precipProbability)}%{weather.isRaining ? ' (llueve ahora)' : ''} ·{' '}
+                {manual
+                  ? `Clima manual: ${WEATHER_PRESET_LABELS[manual]}`
+                  : loaded?.origin === 'antiguo'
+                    ? `Sin conexión: clima guardado ${ageLabel(loaded.ageMs)} en ${loaded.city}`
+                    : loaded?.origin === 'cache'
+                      ? `${loaded.city} (guardado)`
+                      : (loaded?.city ?? '')}
               </span>
             </div>
-            <p className="muted weather-note">
-              {manual
-                ? `Clima manual: ${WEATHER_PRESET_LABELS[manual]}`
-                : loaded?.origin === 'antiguo'
-                  ? `Sin conexión: clima guardado ${ageLabel(loaded.ageMs)} en ${loaded.city}`
-                  : loaded?.origin === 'cache'
-                    ? `Clima de ${loaded.city} (guardado)`
-                    : `Clima de ${loaded?.city ?? ''}`}
-            </p>
-          </>
+            {!showPresets && weatherState.status === 'ready' && (
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={manual ? 'Usar clima real' : 'Cambiar clima'}
+                title={manual ? 'Usar clima real' : 'Cambiar clima'}
+                onClick={() => (manual ? clearManual() : setPicking(true))}
+              >
+                {manual ? <RotateCcw size={20} aria-hidden="true" /> : <SlidersHorizontal size={20} aria-hidden="true" />}
+              </button>
+            )}
+          </div>
         )}
         {weatherState.status === 'ready' && !weather && (
           <p className="page-hint">No se pudo obtener el clima. Elige uno:</p>
         )}
-        {showPresets ? (
-          <div className="chips" role="group" aria-label="Clima manual">
+        {showPresets && (
+          <div className="chips chips-scroll" role="group" aria-label="Clima manual">
             {WEATHER_PRESET_KEYS.map((k) => (
               <button
                 key={k}
@@ -241,25 +267,6 @@ export default function HoyPage() {
               </button>
             ))}
           </div>
-        ) : (
-          weatherState.status === 'ready' && (
-            <button type="button" className="btn btn-quiet btn-inline" onClick={() => setPicking(true)}>
-              Cambiar clima
-            </button>
-          )
-        )}
-        {manual && !showPresets && (
-          <button
-            type="button"
-            className="btn btn-quiet btn-inline"
-            onClick={() => {
-              setManual(null)
-              shown.current = []
-              setSuggestions(null)
-            }}
-          >
-            Usar clima real
-          </button>
         )}
       </div>
 
@@ -269,6 +276,7 @@ export default function HoyPage() {
         disabled={busy || !weather}
         onClick={() => void run(false)}
       >
+        <Sparkles size={18} aria-hidden="true" />
         {busy && !suggestions ? 'Armando outfits…' : 'Sugerir outfits'}
       </button>
 

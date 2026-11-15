@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { WardrobeGaps } from '../components/WardrobeGaps'
+import { SkeletonBlock, SkeletonRows } from '../components/Skeleton'
+import { UsageHeadline } from '../components/UsageHeadline'
 import { GarmentPhoto } from '../components/GarmentPhoto'
 import { useRepository } from '../components/RepositoryContext'
-import { CATEGORY_LABELS, OCCASION_LABELS, USAGE_WINDOW_DAYS, type Garment, type WearEntry, type WearStats } from '../db'
+import { CATEGORY_LABELS, OCCASION_LABELS, type Garment, type WearEntry, type WearStats } from '../db'
 import { daysBetween } from '../engine'
 import { addDays, localDateString } from '../lib/date'
 
@@ -58,7 +60,8 @@ export default function UsoPage() {
   if (!data) return (
     <section>
       <h1 className="page-title">Uso</h1>
-      <p className="page-hint">Cargando…</p>
+      <SkeletonBlock height={132} />
+      <SkeletonRows count={5} />
     </section>
   )
 
@@ -99,21 +102,7 @@ export default function UsoPage() {
     <section>
       <h1 className="page-title">Uso</h1>
 
-      <div className="usage-headline" data-testid="usage-headline">
-        {stats.activeCount === 0 ? (
-          <p className="page-hint">Aún no tienes prendas activas. Agrega prendas en Armario para ver su uso.</p>
-        ) : (
-          <>
-            <strong className="usage-percent" data-testid="usage-percent">
-              {Math.round(stats.usedPercent)}%
-            </strong>
-            <span className="usage-caption">del armario usado en {USAGE_WINDOW_DAYS} días</span>
-            <span className="muted usage-count" data-testid="usage-count">
-              {stats.usedLast30} de {stats.activeCount} prendas activas
-            </span>
-          </>
-        )}
-      </div>
+      <UsageHeadline stats={stats} />
 
       <h2 className="section-title">Menos usadas</h2>
       {leastUsed.length === 0 ? (

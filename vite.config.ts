@@ -21,8 +21,8 @@ export default defineConfig({
         description: 'Tu armario y outfits del día',
         lang: 'es',
         display: 'standalone',
-        theme_color: '#1f2937',
-        background_color: '#f9fafb',
+        theme_color: '#f5f5f3',
+        background_color: '#f5f5f3',
         start_url: '.',
         scope: '.',
         icons: [
@@ -37,7 +37,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,webmanifest,wasm}'],
+        globPatterns: ['**/*.{js,css,html,png,svg,webmanifest,wasm,woff2}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
     }),

@@ -1,6 +1,6 @@
+import { Check, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { useState } from 'react'
 import {
-  CATEGORY_LABELS,
   DISLIKE_TAGS,
   LIKE_TAGS,
   tagLabel,
@@ -9,7 +9,7 @@ import {
   type Rating,
 } from '../db'
 import type { SuggestedOutfit } from '../engine'
-import { GarmentPhoto } from './GarmentPhoto'
+import { OutfitVisual } from './OutfitVisual'
 
 const SOURCE_LABELS = { ia: 'IA', reglas: 'reglas' } as const
 
@@ -23,11 +23,11 @@ interface OutfitCardProps {
   busy?: boolean
   /** Calificación guardada de este outfit (fase 5). */
   feedback?: FeedbackEntry | null
-  /** Si se omite, la tarjeta no muestra 👍 / 👎. Debe rechazar si no se pudo guardar. */
+  /** Si se omite, la tarjeta no muestra me gusta / no me gusta. Debe rechazar si no se pudo guardar. */
   onRate?: (rating: Rating, tags: string[], comment: string) => Promise<void>
 }
 
-const RATING_TEXT: Record<Rating, string> = { like: '👍 Me gusta', dislike: '👎 No me gusta' }
+const RATING_TEXT: Record<Rating, string> = { like: 'Me gusta', dislike: 'No me gusta' }
 
 function RatingPanel({ feedback, onRate }: { feedback: FeedbackEntry | null; onRate: NonNullable<OutfitCardProps['onRate']> }) {
   const [picking, setPicking] = useState<Rating | null>(null)
@@ -63,8 +63,11 @@ function RatingPanel({ feedback, onRate }: { feedback: FeedbackEntry | null; onR
     <div className="rating" data-testid="rating">
       {feedback && !picking && (
         <p className="rating-saved" data-testid="rating-saved">
-          Tu calificación: {RATING_TEXT[feedback.rating]}
-          {feedback.tags.length > 0 && ` · ${feedback.tags.map((t) => tagLabel(feedback.rating, t)).join(', ')}`}
+          {feedback.rating === 'like' ? <ThumbsUp size={16} aria-hidden="true" /> : <ThumbsDown size={16} aria-hidden="true" />}
+          <span>
+            {RATING_TEXT[feedback.rating]}
+            {feedback.tags.length > 0 && ` · ${feedback.tags.map((t) => tagLabel(feedback.rating, t)).join(', ')}`}
+          </span>
         </p>
       )}
       {!picking && (
@@ -78,7 +81,8 @@ function RatingPanel({ feedback, onRate }: { feedback: FeedbackEntry | null; onR
               aria-label={r === 'like' ? 'Me gusta' : 'No me gusta'}
               onClick={() => open(r)}
             >
-              {r === 'like' ? '👍' : '👎'}
+              {r === 'like' ? <ThumbsUp size={18} aria-hidden="true" /> : <ThumbsDown size={18} aria-hidden="true" />}
+              {RATING_TEXT[r]}
             </button>
           ))}
         </div>
@@ -140,19 +144,7 @@ export function OutfitCard({
           {SOURCE_LABELS[outfit.source]}
         </span>
       </div>
-      <ul className="outfit-items">
-        {items.map((g) => {
-          const title = g.subcategory || CATEGORY_LABELS[g.category]
-          return (
-            <li key={g.id} className="outfit-item">
-              <div className="outfit-thumb">
-                <GarmentPhoto photoPath={g.photo_path} alt={title} />
-              </div>
-              <span className="outfit-item-name">{title}</span>
-            </li>
-          )
-        })}
-      </ul>
+      <OutfitVisual items={items} />
       <p className="outfit-reasoning">{outfit.reasoning}</p>
       {onRate && <RatingPanel feedback={feedback} onRate={onRate} />}
       <div className="outfit-actions">
@@ -160,7 +152,8 @@ export function OutfitCard({
           (worn ? (
             <>
               <span className="worn-note" data-testid="worn-note">
-                Puesto hoy ✓
+                <Check size={18} aria-hidden="true" />
+                Puesto hoy
               </span>
               <button type="button" className="btn btn-quiet btn-inline" disabled={busy} onClick={onUndo}>
                 Deshacer

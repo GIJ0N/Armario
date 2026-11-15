@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAi } from '../ai/AiProviderContext'
+import { useToast } from '../components/ToastProvider'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { SkeletonRows } from '../components/Skeleton'
 import { GarmentForm, type GarmentFormSubmit } from '../components/GarmentForm'
 import { GarmentPhoto } from '../components/GarmentPhoto'
 import { PurchaseResult, VerdictBadge } from '../components/PurchaseResult'
@@ -21,6 +23,7 @@ interface Viewing {
 const nameOf = (g: Garment) => g.subcategory || CATEGORY_LABELS[g.category]
 
 export default function ComprarPage() {
+  const toast = useToast()
   const repo = useRepository()
   const navigate = useNavigate()
   const ai = useAi()
@@ -113,6 +116,7 @@ export default function ComprarPage() {
     setBusy(true)
     try {
       await repo.setStatus(viewing.garment.id, 'active')
+      toast('Prenda agregada a tu armario')
       navigate('/armario')
     } catch (e) {
       setBusy(false)
@@ -223,7 +227,7 @@ export default function ComprarPage() {
           />
         </>
       ) : candidates === null ? (
-        <p className="page-hint">Cargando…</p>
+        <SkeletonRows count={3} />
       ) : candidates.length === 0 ? (
         <p className="page-hint">Tu lista de deseos está vacía. Evalúa una prenda para guardarla aquí.</p>
       ) : (

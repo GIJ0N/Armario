@@ -1,3 +1,4 @@
+import { Shirt } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useRepository } from './RepositoryContext'
 
@@ -21,6 +22,12 @@ export function GarmentPhoto({ photoPath, alt }: { photoPath: string | null; alt
     }
   }, [repo, photoPath])
 
-  if (!photoPath || !url) return <div className="photo-placeholder" aria-hidden="true">👕</div>
+  if (!photoPath || !url) {
+    return (
+      <div className="photo-placeholder" aria-hidden="true">
+        <Shirt strokeWidth={1.4} />
+      </div>
+    )
+  }
   return <img className="garment-img" src={url} alt={alt} />
 }
