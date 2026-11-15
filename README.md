@@ -41,7 +41,8 @@ El manifest usa `start_url` y `scope` relativos, por lo que siguen al base path.
 1. Abre la URL publicada en **Safari**.
 2. Toca Compartir → **Agregar a pantalla de inicio**.
 3. Abre siempre la app desde el ícono de la pantalla de inicio (no desde Safari): así iOS conserva los datos locales.
+4. Haz un **respaldo semanal**: Ajustes → Exportar respaldo y guárdalo en Archivos o iCloud Drive (la app te lo recuerda cada 7 días). Para restaurar en una instalación limpia: Ajustes → Restaurar respaldo. El respaldo no incluye tu API key.
 
 ## Íconos
 
-Los PNG de `public/icons/` son placeholders generados con `npm run icons` (`scripts/generate-icons.mjs`, usa `sharp`).
+Los PNG de `public/icons/` (percha blanca sobre #1f2937, incluido el maskable) se generan con `npm run icons` (`scripts/generate-icons.mjs`, usa `sharp`).
