@@ -62,6 +62,8 @@ function stubPlan(occasion: Occasion, weather: EngineContext['weather'], all: Ga
     hasCombos: true,
     avoidPairs: new Set(),
     tasteApplied: false,
+    requireFavorite: false,
+    favoriteUnsatisfiable: false,
   }
 }
 

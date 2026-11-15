@@ -36,6 +36,8 @@ export const garmentInputSchema = z.object({
   is_statement: z.boolean().default(false),
   status: z.enum(STATUSES).default('active'),
   notes: z.string().trim().default(''),
+  /** Fase 12. Si se omite al actualizar, se conserva el valor guardado. */
+  favorite: z.boolean().optional(),
 })
 
 export type GarmentInput = z.input<typeof garmentInputSchema>
@@ -73,7 +75,31 @@ export interface OutfitInput {
 export interface Outfit extends OutfitInput {
   id: string
   created_at: string
+  /** Fase 12: ISO si el outfit está guardado en «Armario › Outfits»; null/ausente si no. */
+  saved_at?: string | null
+  /** Nombre opcional del outfit guardado. */
+  name?: string | null
 }
+
+/** Outfit guardado con la fecha de su último uso (YYYY-MM-DD; null si nunca se ha usado). */
+export interface SavedOutfit {
+  outfit: Outfit
+  lastWorn: string | null
+}
+
+/** Cambio manual de una prenda de un outfit (señal ligera de gusto). */
+export interface OutfitSwap {
+  id: string
+  outfitId: string | null
+  /** Prenda que se quitó; null si solo se agregó. */
+  fromGarmentId: string | null
+  /** Prenda elegida; null si solo se quitó. */
+  toGarmentId: string | null
+  /** ISO */
+  createdAt: string
+}
+
+export type NewOutfitSwap = Pick<OutfitSwap, 'outfitId' | 'fromGarmentId' | 'toGarmentId'> & { createdAt?: string }
 
 export const RATINGS = ['like', 'dislike'] as const
 export type Rating = (typeof RATINGS)[number]

@@ -1,7 +1,7 @@
 import { FORMALITY_LABELS, OCCASION_LABELS } from '../db/labels'
 import type { Garment } from '../db/types'
 import { OCCASION_RULES } from './occasions'
-import { forEachBaseCombo, hasAvoidedPair, spreadOf, type Plan } from './plan'
+import { canHaveFavorite, favoriteAccessoriesFor, forEachBaseCombo, hasAvoidedPair, spreadOf, type Plan } from './plan'
 import type { OutfitSuggestion } from './types'
 import { validateOutfit } from './validate'
 
@@ -39,6 +39,9 @@ interface Candidate {
   score: number
 }
 
+/** Puntos por nivel de «manual» (cambios hechos a mano) de una prenda; tope ±MANUAL_SCORE_CAP niveles. */
+export const MANUAL_WEIGHT = 2
+
 const name = (g: Garment) => (g.subcategory || g.category).toLowerCase()
 
 export function scoreCombo(plan: Plan, items: Garment[], rankOf: Map<string, number>): number {
@@ -74,17 +77,28 @@ function tasteScore(plan: Plan, items: Garment[]): number {
   if (hasAvoidedPair(items.map((g) => g.id), plan.byId, taste.dislikedPairs)) score -= DISLIKED_PAIR_PENALTY
   const liked = new Set(taste.likedGarmentIds)
   score += items.filter((g) => liked.has(g.id)).length * LIKED_BONUS
+  // Cambios manuales: acotado (ver MANUAL_SCORE_CAP) para no competir con la rotación (100 por prioritaria).
+  const manual = taste.manualScores
+  if (manual) for (const g of items) score += (manual[g.id] ?? 0) * MANUAL_WEIGHT
   return score
 }
 
 function pickAccessories(plan: Plan, core: Garment[], rankOf: Map<string, number>): Garment[] {
   const mean = core.reduce((s, g) => s + g.formality, 0) / core.length
+  // Con «Con una favorita» y sin favorita en la base, el primer accesorio es una favorita.
+  const needFavorite = plan.requireFavorite && !core.some((g) => g.favorite)
+  const favPool = needFavorite
+    ? favoriteAccessoriesFor(plan, core).sort((a, b) => (rankOf.get(a.id) ?? 0) - (rankOf.get(b.id) ?? 0) || a.id.localeCompare(b.id))
+    : []
   const pool = plan.filter.bySlot.accessory
     .filter((a) => Math.abs(a.formality - mean) <= 1)
     .sort((a, b) => (rankOf.get(a.id) ?? 0) - (rankOf.get(b.id) ?? 0) || a.id.localeCompare(b.id))
   const chosen: Garment[] = []
-  for (const a of pool) {
+  for (const a of needFavorite ? [...favPool, ...pool] : pool) {
     if (chosen.length >= 2) break
+    if (chosen.includes(a)) continue
+    // Mientras falte la favorita solo se admiten favoritas en el primer lugar.
+    if (needFavorite && chosen.length === 0 && !a.favorite) continue
     const all = [...core, ...chosen]
     if (a.is_statement && all.some((g) => g.is_statement)) continue
     if (chosen.some((c) => norm(c.subcategory) === norm(a.subcategory))) continue
@@ -128,6 +142,7 @@ export function composeFallback(plan: Plan, count: number, existing: OutfitSugge
     plan,
     (items) => {
       if (mustHavePriority && !items.some((g) => plan.priorityIds.has(g.id))) return
+      if (plan.requireFavorite && !canHaveFavorite(plan, items)) return
       pool.push({ items, score: scoreCombo(plan, items, rankOf) })
       if (pool.length > 4000) pool = pool.sort((a, b) => b.score - a.score).slice(0, 1000)
     },

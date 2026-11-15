@@ -1,7 +1,9 @@
-import { Shirt, Search, WashingMachine, Undo2 } from 'lucide-react'
+import { Heart, Plus, Search, Shirt, WashingMachine } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { GarmentPhoto } from '../components/GarmentPhoto'
+import { OutfitEditorSheet } from '../components/OutfitEditorSheet'
+import { SavedOutfitsList } from '../components/SavedOutfitsList'
 import { useRepository } from '../components/RepositoryContext'
 import { SkeletonGrid } from '../components/Skeleton'
 import { useToast } from '../components/ToastProvider'
@@ -14,8 +16,14 @@ import {
   type Garment,
   type Status,
 } from '../db'
+import type { WearRecord } from '../engine'
+import { localDateString } from '../lib/date'
+import { createManualOutfit } from '../outfits/edit'
 
 const DEFAULT_STATUSES: Status[] = ['active', 'laundry']
+
+type Segment = 'garments' | 'outfits'
+const WEARS_LOOKBACK_DAYS = 60
 
 const normalize = (t: string) => t.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
 
@@ -34,6 +42,10 @@ export default function ArmarioPage() {
   const [garments, setGarments] = useState<Garment[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [onlyFavorites, setOnlyFavorites] = useState(false)
+  const [segment, setSegment] = useState<Segment>('garments')
+  const [creating, setCreating] = useState<{ garments: Garment[]; wears: WearRecord[] } | null>(null)
+  const [outfitsReload, setOutfitsReload] = useState(0)
   const toast = useToast()
 
   const load = useCallback(async () => {
@@ -65,11 +77,61 @@ export default function ArmarioPage() {
     }
   }
 
-  const visible = useMemo(() => garments?.filter((g) => matchesQuery(g, query)) ?? null, [garments, query])
+  async function toggleFavorite(g: Garment) {
+    setError(null)
+    try {
+      await repo.setFavorite(g.id, !g.favorite)
+      await load()
+      toast(g.favorite ? 'Quitada de favoritas' : 'Agregada a favoritas')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo actualizar.')
+    }
+  }
+
+  async function openCreate() {
+    setError(null)
+    try {
+      const [all, wearEntries] = await Promise.all([
+        repo.list({ statuses: ['active', 'laundry'] }),
+        repo.wears.listSince(WEARS_LOOKBACK_DAYS),
+      ])
+      setCreating({ garments: all, wears: wearEntries.map((w) => ({ garmentIds: w.garmentIds, date: w.date })) })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo abrir el editor.')
+    }
+  }
+
+  const visible = useMemo(
+    () => garments?.filter((g) => matchesQuery(g, query) && (!onlyFavorites || g.favorite)) ?? null,
+    [garments, query, onlyFavorites],
+  )
 
   return (
     <section>
-      <h1 className="page-title">Armario</h1>
+      <div className="page-head">
+        <h1 className="page-title">Armario</h1>
+        <button type="button" className="btn btn-inline" onClick={() => void openCreate()}>
+          <Plus size={16} aria-hidden="true" />
+          Crear outfit
+        </button>
+      </div>
+      <div className="chips" role="tablist" aria-label="Secciones del armario">
+        {(['garments', 'outfits'] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={segment === key}
+            className={`chip${segment === key ? ' chip-active' : ''}`}
+            onClick={() => setSegment(key)}
+          >
+            {key === 'garments' ? 'Prendas' : 'Outfits'}
+          </button>
+        ))}
+      </div>
+      {segment === 'outfits' && <SavedOutfitsList reloadKey={outfitsReload} />}
+      {segment === 'garments' && (
+      <>
       <div className="filter-bar">
       <label className="search-box">
         <span className="sr-only">Buscar prendas</span>
@@ -101,6 +163,15 @@ export default function ArmarioPage() {
           </select>
         </label>
       </div>
+      <button
+        type="button"
+        className={`chip chip-toggle${onlyFavorites ? ' chip-active' : ''}`}
+        aria-pressed={onlyFavorites}
+        onClick={() => setOnlyFavorites((v) => !v)}
+      >
+        <Heart size={16} aria-hidden="true" fill={onlyFavorites ? 'currentColor' : 'none'} />
+        Favoritas
+      </button>
       </div>
       {error && <p role="alert" className="form-error">{error}</p>}
       {visible && (
@@ -114,7 +185,7 @@ export default function ArmarioPage() {
           <Shirt size={40} strokeWidth={1.3} aria-hidden="true" />
           <p>
             {garments && garments.length > 0
-              ? 'No hay prendas que coincidan con tu búsqueda.'
+              ? 'No hay prendas que coincidan con tu búsqueda o filtros.'
               : 'No hay prendas con estos filtros.'}{' '}
             <Link to="/agregar">Agrega una</Link>.
           </p>
@@ -123,7 +194,6 @@ export default function ArmarioPage() {
       <ul className="grid">
         {visible?.map((g) => {
           const title = g.subcategory || CATEGORY_LABELS[g.category]
-          const toggleable = g.status === 'active' || g.status === 'laundry'
           return (
             <li key={g.id} className="card">
               <Link to={`/armario/${g.id}`} className="card-link" aria-label={`Editar ${title}`}>
@@ -136,22 +206,55 @@ export default function ArmarioPage() {
                 </div>
               </Link>
               {g.status !== 'active' && <span className="badge">{STATUS_LABELS[g.status]}</span>}
-              {toggleable && (
-                <button
-                  type="button"
-                  className="card-action"
-                  aria-label={g.status === 'laundry' ? 'Marcar activa' : 'A lavandería'}
-                  onClick={() => void toggleLaundry(g)}
-                >
+              <button
+                type="button"
+                className={`card-fav${g.favorite ? ' card-fav-on' : ''}`}
+                aria-label={g.favorite ? `Quitar ${title} de favoritas` : `Marcar ${title} como favorita`}
+                aria-pressed={!!g.favorite}
+                onClick={() => void toggleFavorite(g)}
+              >
+                <Heart size={18} aria-hidden="true" fill={g.favorite ? 'currentColor' : 'none'} />
+              </button>
+              {g.status === 'active' && (
+                <button type="button" className="card-action" aria-label="A lavandería" onClick={() => void toggleLaundry(g)}>
                   <span>
-                    {g.status === 'laundry' ? <Undo2 size={15} aria-hidden="true" /> : <WashingMachine size={15} aria-hidden="true" />}
+                    <WashingMachine size={15} aria-hidden="true" />
                   </span>
+                </button>
+              )}
+              {g.status === 'laundry' && (
+                <button type="button" className="card-clean" onClick={() => void toggleLaundry(g)}>
+                  Ya está limpia
                 </button>
               )}
             </li>
           )
         })}
       </ul>
+      </>
+      )}
+      {creating && (
+        <OutfitEditorSheet
+          title="Crear outfit"
+          garments={creating.garments}
+          wears={creating.wears}
+          today={localDateString()}
+          onSave={async (value) => {
+            const byId = new Map(creating.garments.map((g) => [g.id, g]))
+            await createManualOutfit(repo, {
+              garmentIds: value.garmentIds,
+              occasion: value.occasion,
+              name: value.name,
+              categoryOf: (id) => byId.get(id)?.category,
+            })
+            setCreating(null)
+            setSegment('outfits')
+            setOutfitsReload((n) => n + 1)
+            toast('Outfit guardado en Armario › Outfits')
+          }}
+          onClose={() => setCreating(null)}
+        />
+      )}
     </section>
   )
 }

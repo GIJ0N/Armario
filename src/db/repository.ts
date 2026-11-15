@@ -15,9 +15,12 @@ import {
   type GarmentInput,
   type NewPurchaseEvaluation,
   type PurchaseEvaluation,
+  type NewOutfitSwap,
   type Occasion,
   type Outfit,
   type OutfitInput,
+  type OutfitSwap,
+  type SavedOutfit,
   type Rating,
   type TasteProfile,
 } from './types'
@@ -30,6 +33,8 @@ export interface GarmentRepository {
   update(id: string, input: GarmentInput): Promise<Garment>
   /** Cambia solo el estado (p. ej. lavandería). */
   setStatus(id: string, status: Garment['status']): Promise<Garment>
+  /** Marca o desmarca la prenda como favorita (fase 12). */
+  setFavorite(id: string, favorite: boolean): Promise<Garment>
   delete(id: string): Promise<void>
   savePhoto(blob: Blob): Promise<string>
   getPhoto(key: string): Promise<Blob | null>
@@ -46,6 +51,24 @@ export interface OutfitRepository {
   create(input: OutfitInput): Promise<Outfit>
   /** Outfits creados en los últimos `days` días, del más reciente al más antiguo. */
   listRecent(days: number, now?: Date): Promise<Outfit[]>
+  get(id: string): Promise<Outfit | null>
+  /** Cambia las prendas (y opcionalmente la razón y la ocasión) de un outfit en su lugar; el origen pasa a 'manual'. */
+  updateItems(id: string, patch: { garmentIds: string[]; reasoning?: string; occasion?: Occasion }): Promise<Outfit>
+  /** ¿El outfit tiene una calificación o algún uso? Si es así no debe reescribirse (ver `commitOutfitEdit`). */
+  hasHistory(id: string): Promise<boolean>
+  /** Guarda el outfit en «Armario › Outfits» (nombre opcional). Idempotente: vuelve a guardar el nombre. */
+  save(id: string, name?: string): Promise<Outfit>
+  /** Quita el outfit de los guardados; la fila se conserva (historial). */
+  unsave(id: string): Promise<Outfit>
+  /** Outfits guardados, el más reciente primero, con su último uso. */
+  listSaved(): Promise<SavedOutfit[]>
+}
+
+/** Señales de cambios manuales (fase 12): alimentan una pequeña corrección del gusto. */
+export interface SwapRepository {
+  record(swaps: NewOutfitSwap[]): Promise<void>
+  /** Más recientes primero. */
+  list(limit: number): Promise<OutfitSwap[]>
 }
 
 export interface Wear {
@@ -117,6 +140,7 @@ export interface Repository extends GarmentRepository {
   readonly feedback: FeedbackRepository
   readonly taste: TasteProfileRepository
   readonly purchases: PurchaseEvaluationRepository
+  readonly swaps: SwapRepository
 }
 
 type Row = Record<string, unknown>
@@ -140,6 +164,7 @@ function rowToGarment(row: Row): Garment {
     created_at: row.created_at as string,
     cutout_path: (row.cutout_path as string | null) ?? null,
     cutout_kind: (row.cutout_kind as CutoutKind | null) ?? null,
+    favorite: row.favorite === 1,
   }
 }
 
@@ -152,6 +177,8 @@ function rowToOutfit(row: Row): Outfit {
     reasoning: row.reasoning as string,
     source: row.source as Outfit['source'],
     created_at: row.created_at as string,
+    saved_at: (row.saved_at as string | null) ?? null,
+    name: (row.name as string | null) ?? null,
   }
 }
 
@@ -221,6 +248,36 @@ export class SqliteGarmentRepository implements Repository {
   readonly outfits: OutfitRepository = {
     create: (input) => this.createOutfit(input),
     listRecent: (days, now) => this.listRecentOutfits(days, now),
+    get: async (id) => this.selectOutfit(id),
+    updateItems: (id, patch) => this.updateOutfitItems(id, patch),
+    hasHistory: async (id) =>
+      this.db.selectValue('SELECT 1 FROM wears WHERE outfit_id = ? LIMIT 1', [id]) !== undefined ||
+      this.db.selectValue('SELECT 1 FROM feedback WHERE outfit_id = ? LIMIT 1', [id]) !== undefined,
+    save: (id, name) => this.setOutfitSaved(id, true, name),
+    unsave: (id) => this.setOutfitSaved(id, false),
+    listSaved: async () =>
+      this.db
+        .selectObjects(
+          `SELECT o.*, (SELECT MAX(w.date) FROM wears w WHERE w.outfit_id = o.id) AS last_worn
+           FROM outfits o WHERE o.saved_at IS NOT NULL ORDER BY o.saved_at DESC, o.rowid DESC`,
+        )
+        .map((row) => ({ outfit: rowToOutfit(row), lastWorn: (row.last_worn as string | null) ?? null })),
+  }
+
+  readonly swaps: SwapRepository = {
+    record: (swaps) => this.recordSwaps(swaps),
+    list: async (limit) =>
+      this.db
+        .selectObjects('SELECT * FROM outfit_swaps ORDER BY created_at DESC, rowid DESC LIMIT ?', [limit])
+        .map(
+          (row): OutfitSwap => ({
+            id: row.id as string,
+            outfitId: (row.outfit_id as string | null) ?? null,
+            fromGarmentId: (row.from_garment_id as string | null) ?? null,
+            toGarmentId: (row.to_garment_id as string | null) ?? null,
+            createdAt: row.created_at as string,
+          }),
+        ),
   }
 
   readonly wears: WearRepository = {
@@ -370,18 +427,20 @@ export class SqliteGarmentRepository implements Repository {
           created_at,
         ],
       })
+      if (data.favorite) this.db.exec({ sql: 'UPDATE garments SET favorite=1 WHERE id=?', bind: [id] })
     })
-    return { ...data, id, created_at, cutout_path: null, cutout_kind: null }
+    return { ...data, id, created_at, cutout_path: null, cutout_kind: null, favorite: !!data.favorite }
   }
 
   async update(id: string, input: GarmentInput) {
     const data = garmentInputSchema.parse(input)
     const before = this.select(id)
     if (!before) throw new Error('Prenda no encontrada')
+    const favorite = data.favorite ?? before.favorite
     await this.write(() => {
       this.db.exec({
         sql: `UPDATE garments SET photo_path=?, category=?, subcategory=?, colors=?, pattern=?, material=?,
-          fit=?, formality=?, warmth=?, occasions=?, is_statement=?, status=?, notes=? WHERE id=?`,
+          fit=?, formality=?, warmth=?, occasions=?, is_statement=?, status=?, notes=?, favorite=? WHERE id=?`,
         bind: [
           data.photo_path,
           data.category,
@@ -396,6 +455,7 @@ export class SqliteGarmentRepository implements Repository {
           data.is_statement ? 1 : 0,
           data.status,
           data.notes,
+          favorite ? 1 : 0,
           id,
         ],
       })
@@ -411,6 +471,7 @@ export class SqliteGarmentRepository implements Repository {
     if (photoChanged && before.cutout_path) await this.storage.deletePhoto(before.cutout_path)
     return {
       ...data,
+      favorite,
       id,
       created_at: before.created_at,
       cutout_path: photoChanged ? null : (before.cutout_path ?? null),
@@ -422,6 +483,15 @@ export class SqliteGarmentRepository implements Repository {
     const before = this.select(id)
     if (!before) throw new Error('Prenda no encontrada')
     return this.update(id, { ...before, status })
+  }
+
+  async setFavorite(id: string, favorite: boolean) {
+    const before = this.select(id)
+    if (!before) throw new Error('Prenda no encontrada')
+    await this.write(() => {
+      this.db.exec({ sql: 'UPDATE garments SET favorite=? WHERE id=?', bind: [favorite ? 1 : 0, id] })
+    })
+    return { ...before, favorite }
   }
 
   async delete(id: string) {
@@ -489,6 +559,64 @@ export class SqliteGarmentRepository implements Repository {
     return this.db
       .selectObjects('SELECT * FROM outfits WHERE created_at >= ? ORDER BY created_at DESC, rowid DESC', [since])
       .map(rowToOutfit)
+  }
+
+  private selectOutfit(id: string): Outfit | null {
+    const rows = this.db.selectObjects('SELECT * FROM outfits WHERE id = ?', [id])
+    return rows.length ? rowToOutfit(rows[0]) : null
+  }
+
+  private async updateOutfitItems(
+    id: string,
+    patch: { garmentIds: string[]; reasoning?: string; occasion?: Occasion },
+  ): Promise<Outfit> {
+    await this.write(() => {
+      if (this.db.selectValue('SELECT 1 FROM outfits WHERE id = ?', [id]) === undefined) {
+        throw new Error('Outfit no encontrado')
+      }
+      const sets = ["garment_ids=?", "source='manual'"]
+      const bind: (string | null)[] = [JSON.stringify(patch.garmentIds)]
+      if (patch.reasoning !== undefined) {
+        sets.push('reasoning=?')
+        bind.push(patch.reasoning)
+      }
+      if (patch.occasion !== undefined) {
+        sets.push('occasion=?')
+        bind.push(patch.occasion)
+      }
+      this.db.exec({ sql: `UPDATE outfits SET ${sets.join(', ')} WHERE id=?`, bind: [...bind, id] })
+    })
+    return this.selectOutfit(id)!
+  }
+
+  private async setOutfitSaved(id: string, saved: boolean, name?: string): Promise<Outfit> {
+    await this.write(() => {
+      if (this.db.selectValue('SELECT 1 FROM outfits WHERE id = ?', [id]) === undefined) {
+        throw new Error('Outfit no encontrado')
+      }
+      if (saved) {
+        const clean = name?.trim().slice(0, 60) || null
+        this.db.exec({
+          sql: 'UPDATE outfits SET saved_at = COALESCE(saved_at, ?), name = ? WHERE id = ?',
+          bind: [new Date().toISOString(), clean, id],
+        })
+      } else {
+        this.db.exec({ sql: 'UPDATE outfits SET saved_at = NULL, name = NULL WHERE id = ?', bind: [id] })
+      }
+    })
+    return this.selectOutfit(id)!
+  }
+
+  private async recordSwaps(swaps: NewOutfitSwap[]): Promise<void> {
+    if (swaps.length === 0) return
+    await this.write(() => {
+      for (const s of swaps) {
+        this.db.exec({
+          sql: 'INSERT INTO outfit_swaps (id, outfit_id, from_garment_id, to_garment_id, created_at) VALUES (?,?,?,?,?)',
+          bind: [crypto.randomUUID(), s.outfitId, s.fromGarmentId, s.toGarmentId, s.createdAt ?? new Date().toISOString()],
+        })
+      }
+    })
   }
 
   private async createWear(outfitId: string, date: string): Promise<Wear> {

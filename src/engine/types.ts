@@ -50,6 +50,8 @@ export interface EngineContext {
   tasteSummary?: string
   /** Fase 5: outfits con «me gusta» (hasta 5) como ejemplos del prompt. */
   likedOutfits?: { garmentIds: string[]; reasoning: string }[]
+  /** Fase 12: cada outfit sugerido debe incluir al menos una prenda favorita (se ignora si es imposible). */
+  requireFavorite?: boolean
 }
 
 export type OutfitValidation = { ok: true } | { ok: false; errors: string[] }

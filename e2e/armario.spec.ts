@@ -46,8 +46,8 @@ test('agregar, recargar, editar y eliminar una prenda', async ({ page }) => {
 
   // Lavandería con un toque.
   await page.getByRole('button', { name: 'A lavandería' }).click()
-  await expect(page.getByRole('button', { name: 'Marcar activa' })).toBeVisible()
-  await page.getByRole('button', { name: 'Marcar activa' }).click()
+  await expect(page.getByRole('button', { name: 'Ya está limpia' })).toBeVisible()
+  await page.getByRole('button', { name: 'Ya está limpia' }).click()
 
   // Editar.
   await page.getByRole('link', { name: /Editar Camisa azul/ }).click()
@@ -296,4 +296,73 @@ test('Ajustes muestra «Recorte de fondo» sin descargar el modelo por su cuenta
   await expect(page.getByRole('button', { name: 'Descargar modelo' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Probar recorte' })).toBeDisabled()
   expect(requested.filter((u) => /huggingface|\.onnx|\.wasm/.test(u.replace(/sqlite3[^/]*\.wasm/, '')))).toEqual([])
+})
+
+async function mockMildWeather(page: import('@playwright/test').Page) {
+  await page.route('**/geocoding-api.open-meteo.com/**', (route) =>
+    route.fulfill({ json: { results: [{ name: 'Monterrey', latitude: 25.67, longitude: -100.31 }] } }),
+  )
+  await page.route('**/api.open-meteo.com/**', (route) =>
+    route.fulfill({
+      json: {
+        current: { temperature_2m: 22, apparent_temperature: 22, precipitation: 0, weather_code: 1 },
+        daily: { temperature_2m_max: [26], temperature_2m_min: [17], precipitation_probability_max: [10] },
+      },
+    }),
+  )
+}
+
+test('editar un outfit en Hoy cambiando la prenda superior y guardarlo; aparece en Armario › Outfits', async ({ page }) => {
+  await mockMildWeather(page)
+  for (const [category, name] of [
+    ['top', 'Polo uno'],
+    ['top', 'Camisa dos'],
+    ['bottom', 'Chinos e2e'],
+    ['shoes', 'Mocasines e2e'],
+  ] as const) {
+    await page.goto('./#/agregar')
+    await page.getByLabel('Categoría *').selectOption(category)
+    await page.getByLabel('Subcategoría').fill(name)
+    await page.getByLabel('Formalidad *').selectOption('3')
+    await page.getByLabel('Abrigo *').selectOption('2')
+    await page.getByRole('button', { name: 'Guardar prenda' }).click()
+    await expect(page.getByText(name)).toBeVisible()
+  }
+
+  await page.goto('./#/')
+  await expect(page.getByTestId('weather-card')).toContainText('22°')
+  await page.getByRole('button', { name: 'Sugerir outfits' }).click()
+  const card = page.getByTestId('outfit-card').first()
+  await expect(card).toBeVisible()
+  const chips = card.getByRole('list', { name: 'Prendas del outfit' })
+  const current = (await chips.getByRole('button', { name: /^(Polo uno|Camisa dos)$/ }).first().textContent())!.trim()
+  const other = current === 'Polo uno' ? 'Camisa dos' : 'Polo uno'
+
+  // Cambiar la prenda superior desde la hoja de alternativas.
+  await chips.getByRole('button', { name: current }).click()
+  const sheet = page.getByRole('dialog', { name: `Cambiar ${current}` })
+  await expect(sheet).toBeVisible()
+  await expect(sheet.getByRole('button', { name: 'Quitar' })).toHaveCount(0)
+  await sheet.getByTestId('alt-valid').filter({ hasText: other }).click()
+  await expect(sheet).toBeHidden()
+  await expect(chips.getByRole('button', { name: other })).toBeVisible()
+  await expect(card.getByTestId('source-badge')).toHaveText('manual')
+
+  // Guardarlo con nombre.
+  await card.getByRole('button', { name: 'Guardar outfit' }).click()
+  await page.getByRole('dialog', { name: 'Guardar outfit' }).getByLabel('Nombre (opcional)').fill('Mi outfit e2e')
+  await page.getByRole('dialog', { name: 'Guardar outfit' }).getByRole('button', { name: 'Guardar' }).click()
+  await expect(card.getByRole('button', { name: 'Quitar de guardados' })).toBeVisible()
+
+  // Aparece en Armario › Outfits, también tras recargar, con la prenda cambiada.
+  await page.getByRole('link', { name: 'Armario' }).click()
+  await page.getByRole('tab', { name: 'Outfits' }).click()
+  const saved = page.getByTestId('saved-outfit')
+  await expect(saved).toHaveCount(1)
+  await expect(saved.getByTestId('saved-name')).toHaveText('Mi outfit e2e')
+  await expect(saved.getByRole('button', { name: other })).toBeVisible()
+  await page.reload()
+  await page.getByRole('tab', { name: 'Outfits' }).click()
+  await expect(page.getByTestId('saved-name')).toHaveText('Mi outfit e2e')
+  await expect(page.getByTestId('saved-last-worn')).toHaveText('Aún sin usar')
 })

@@ -19,6 +19,8 @@ export interface Settings {
   buyMinOccasions: number
   /** Apariencia: «Neutro» o «Cálido» (el modo oscuro es automático). */
   theme: Theme
+  /** Hoy: cada outfit sugerido debe incluir al menos una prenda favorita (se ignora si es imposible). */
+  requireFavorite: boolean
 }
 
 export const SETTINGS_STORAGE_KEY = 'armario.settings'
@@ -36,6 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   buyMinOutfits: 5,
   buyMinOccasions: 2,
   theme: 'neutral',
+  requireFavorite: false,
 }
 
 function positiveInt(v: unknown, fallback: number, max: number): number {
@@ -74,6 +77,7 @@ export function loadSettings(): Settings {
     buyMinOutfits: positiveInt(stored.buyMinOutfits, DEFAULT_SETTINGS.buyMinOutfits, 99),
     buyMinOccasions: positiveInt(stored.buyMinOccasions, DEFAULT_SETTINGS.buyMinOccasions, 6),
     theme: THEMES.includes(stored.theme as Theme) ? (stored.theme as Theme) : DEFAULT_SETTINGS.theme,
+    requireFavorite: typeof stored.requireFavorite === 'boolean' ? stored.requireFavorite : DEFAULT_SETTINGS.requireFavorite,
   }
   return cacheValue
 }

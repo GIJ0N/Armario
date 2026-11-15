@@ -2,6 +2,7 @@ import { garmentInputSchema, type FeedbackEntry, type Garment, type Outfit, type
 import { computeWearStats } from '../../src/db/wearStats'
 import { addDays, localDateString } from '../../src/lib/date'
 import { memoryFeedback } from './memoryFeedback'
+import { memoryOutfits } from './memoryOutfits'
 import { memoryPurchases } from './memoryPurchases'
 import { wardrobe30 } from './wardrobe30'
 
@@ -28,8 +29,10 @@ export function fakeRepo(initial: Garment[] = wardrobe30) {
       .sort((a, b) => b.date.localeCompare(a.date))
   const mem = memoryFeedback(() => outfits)
   const buy = memoryPurchases(() => garments)
+  const out = memoryOutfits(outfits, () => wears, () => mem.rows)
   const repo: Repository & { saved: Outfit[]; savedWears: Wear[]; ratings: FeedbackEntry[]; garments: Garment[]; photos: string[] } = {
     garments,
+    swaps: out.swaps,
     photos,
     purchases: buy.purchases,
     feedback: mem.feedback,
@@ -37,14 +40,7 @@ export function fakeRepo(initial: Garment[] = wardrobe30) {
     ratings: mem.rows,
     saved: outfits,
     savedWears: wears,
-    outfits: {
-      create: async (input) => {
-        const o = { ...input, id: `o${outfits.length + 1}`, created_at: new Date().toISOString() }
-        outfits.push(o)
-        return o
-      },
-      listRecent: async () => [...outfits].reverse(),
-    },
+    outfits: out.outfits,
     wears: {
       create: async (outfitId, date) => {
         const existing = wears.find((w) => w.outfit_id === outfitId && w.date === date)
@@ -75,6 +71,11 @@ export function fakeRepo(initial: Garment[] = wardrobe30) {
       const i = garments.findIndex((g) => g.id === id)
       garments[i] = { ...garments[i], ...garmentInputSchema.parse(input) }
       return garments[i]
+    },
+    setFavorite: async (id, favorite) => {
+      const g = garments.find((x) => x.id === id)!
+      g.favorite = favorite
+      return g
     },
     setStatus: async (id, status) => {
       const g = garments.find((x) => x.id === id)!

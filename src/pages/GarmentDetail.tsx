@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Heart } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { GarmentForm, type GarmentFormSubmit } from '../components/GarmentForm'
@@ -55,6 +55,26 @@ export default function GarmentDetailPage() {
     navigate('/armario')
   }
 
+  async function toggleFavorite() {
+    try {
+      const updated = await repo.setFavorite(garment!.id, !garment!.favorite)
+      setGarment((cur) => (cur ? { ...cur, favorite: updated.favorite } : cur))
+      toast(updated.favorite ? 'Agregada a favoritas' : 'Quitada de favoritas')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo actualizar.')
+    }
+  }
+
+  async function markClean() {
+    try {
+      const updated = await repo.setStatus(garment!.id, 'active')
+      setGarment(updated)
+      toast('Prenda activa de nuevo')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo actualizar.')
+    }
+  }
+
   async function remove() {
     try {
       await repo.delete(garment!.id)
@@ -74,7 +94,26 @@ export default function GarmentDetailPage() {
           Armario
         </Link>
       </p>
-      <h1 className="page-title">Editar prenda</h1>
+      <div className="page-head">
+        <h1 className="page-title">Editar prenda</h1>
+        <button
+          type="button"
+          className={`icon-btn fav-btn${garment.favorite ? ' fav-btn-on' : ''}`}
+          aria-label={garment.favorite ? 'Quitar de favoritas' : 'Marcar como favorita'}
+          aria-pressed={!!garment.favorite}
+          onClick={() => void toggleFavorite()}
+        >
+          <Heart size={24} aria-hidden="true" fill={garment.favorite ? 'currentColor' : 'none'} />
+        </button>
+      </div>
+      {garment.status === 'laundry' && (
+        <div className="laundry-note">
+          <span className="badge badge-inline">Lavandería</span>
+          <button type="button" className="btn btn-inline" onClick={() => void markClean()}>
+            Ya está limpia
+          </button>
+        </div>
+      )}
       {garment.photo_path && <CutoutControls garment={garment} onChange={setGarment} />}
       <GarmentForm initial={garment} submitLabel="Guardar cambios" onSubmit={save} />
       {error && <p role="alert" className="form-error">{error}</p>}
