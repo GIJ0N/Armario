@@ -1,4 +1,4 @@
-import { BarChart3, ChevronRight, Settings } from 'lucide-react'
+import { BarChart3, CalendarDays, ChevronRight, Settings } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useRepository } from '../components/RepositoryContext'
@@ -26,6 +26,16 @@ export default function YoPage() {
       <h1 className="page-title">Yo</h1>
       {stats ? <UsageHeadline stats={stats} /> : <SkeletonBlock height={132} />}
       <ul className="link-list">
+        <li>
+          <Link to="/calendario" className="link-row">
+            <CalendarDays className="icon" size={22} aria-hidden="true" />
+            <span className="link-row-text">
+              Calendario
+              <small>Lo que usaste y lo que planeaste</small>
+            </span>
+            <ChevronRight className="icon" size={20} aria-hidden="true" />
+          </Link>
+        </li>
         <li>
           <Link to="/uso" className="link-row">
             <BarChart3 className="icon" size={22} aria-hidden="true" />

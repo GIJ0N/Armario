@@ -1,9 +1,10 @@
 import { normalizeGarmentAdjust } from '../../src/canvas/adjust'
-import { garmentInputSchema, type FeedbackEntry, type Garment, type Outfit, type Repository, type Wear, type WearEntry } from '../../src/db'
+import { garmentInputSchema, type FeedbackEntry, type Garment, type Outfit, type PlannedOutfit, type Repository, type Wear, type WearEntry } from '../../src/db'
 import { computeWearStats } from '../../src/db/wearStats'
 import { addDays, localDateString } from '../../src/lib/date'
 import { memoryFeedback } from './memoryFeedback'
 import { memoryOutfits } from './memoryOutfits'
+import { memoryPlans } from './memoryPlans'
 import { memoryPurchases } from './memoryPurchases'
 import { wardrobe30 } from './wardrobe30'
 
@@ -31,7 +32,8 @@ export function fakeRepo(initial: Garment[] = wardrobe30) {
   const mem = memoryFeedback(() => outfits)
   const buy = memoryPurchases(() => garments)
   const out = memoryOutfits(outfits, () => wears, () => mem.rows)
-  const repo: Repository & { saved: Outfit[]; savedWears: Wear[]; ratings: FeedbackEntry[]; garments: Garment[]; photos: string[] } = {
+  const planMem = memoryPlans(outfits, wears)
+  const repo: Repository & { saved: Outfit[]; savedWears: Wear[]; planRows: PlannedOutfit[]; ratings: FeedbackEntry[]; garments: Garment[]; photos: string[] } = {
     garments,
     swaps: out.swaps,
     photos,
@@ -41,6 +43,8 @@ export function fakeRepo(initial: Garment[] = wardrobe30) {
     ratings: mem.rows,
     saved: outfits,
     savedWears: wears,
+    planRows: planMem.rows,
+    plans: planMem.plans,
     outfits: out.outfits,
     wears: {
       create: async (outfitId, date) => {
@@ -54,6 +58,7 @@ export function fakeRepo(initial: Garment[] = wardrobe30) {
         const since = addDays(localDateString(now), -days)
         return entries().filter((e) => e.date >= since)
       },
+      listBetween: async (from, to) => entries().filter((e) => e.date >= from && e.date <= to).reverse(),
       listHistory: async (limit = 200) => entries().slice(0, limit),
       deleteForOutfitOnDate: async (outfitId, date) => {
         const i = wears.findIndex((w) => w.outfit_id === outfitId && w.date === date)

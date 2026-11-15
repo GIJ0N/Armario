@@ -7,6 +7,7 @@ import { useApplyTheme } from './settings/theme'
 import AgregarPage from './pages/Agregar'
 import AjustesPage from './pages/Ajustes'
 import ArmarioPage from './pages/Armario'
+import CalendarioPage from './pages/Calendario'
 import ComprarPage from './pages/Comprar'
 import GarmentDetailPage from './pages/GarmentDetail'
 import HoyPage from './pages/Hoy'
@@ -25,6 +26,7 @@ export default function App({ platformEnv }: { platformEnv?: PlatformEnv } = {})
           <Route path="armario" element={<ArmarioPage />} />
           <Route path="armario/:id" element={<GarmentDetailPage />} />
           <Route path="agregar" element={<AgregarPage />} />
+          <Route path="calendario" element={<CalendarioPage />} />
           <Route path="comprar" element={<ComprarPage />} />
           <Route path="yo" element={<YoPage />} />
           <Route path="uso" element={<UsoPage />} />

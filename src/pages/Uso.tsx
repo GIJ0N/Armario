@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { WardrobeGaps } from '../components/WardrobeGaps'
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton'
 import { UsageHeadline } from '../components/UsageHeadline'
@@ -6,6 +7,7 @@ import { GarmentPhoto } from '../components/GarmentPhoto'
 import { useRepository } from '../components/RepositoryContext'
 import { CATEGORY_LABELS, OCCASION_LABELS, type Garment, type WearEntry, type WearStats } from '../db'
 import { daysBetween } from '../engine'
+import { firstDayOf, monthOf, parseDate } from '../calendar/grid'
 import { addDays, localDateString } from '../lib/date'
 
 const LEAST_USED_COUNT = 10
@@ -16,6 +18,8 @@ interface UsageData {
   garments: Garment[]
   stats: WearStats
   history: WearEntry[]
+  /** Días distintos de este mes con al menos un outfit usado. */
+  monthDays: number
 }
 
 const nameOf = (g: Garment) => g.subcategory || CATEGORY_LABELS[g.category]
@@ -47,8 +51,15 @@ export default function UsoPage() {
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([repo.list(), repo.wears.stats(), repo.wears.listHistory(HISTORY_LIMIT)]).then(
-      ([garments, stats, history]) => !cancelled && setData({ garments, stats, history }),
+    const today = localDateString()
+    Promise.all([
+      repo.list(),
+      repo.wears.stats(),
+      repo.wears.listHistory(HISTORY_LIMIT),
+      repo.wears.listBetween(firstDayOf(monthOf(today)), today),
+    ]).then(
+      ([garments, stats, history, month]) =>
+        !cancelled && setData({ garments, stats, history, monthDays: new Set(month.map((w) => w.date)).size }),
       (e: unknown) => !cancelled && setError(e instanceof Error ? e.message : 'No se pudo cargar el uso.'),
     )
     return () => {
@@ -66,7 +77,7 @@ export default function UsoPage() {
   )
 
   const today = localDateString()
-  const { garments, stats, history } = data
+  const { garments, stats, history, monthDays } = data
   const byId = new Map(garments.map((g) => [g.id, g]))
   const statOf = new Map(stats.garments.map((s) => [s.garmentId, s]))
   const active = garments.filter((g) => g.status === 'active')
@@ -103,6 +114,9 @@ export default function UsoPage() {
       <h1 className="page-title">Uso</h1>
 
       <UsageHeadline stats={stats} />
+      <p className="month-days" data-testid="month-days">
+        Días con outfit registrado este mes: <strong>{monthDays}</strong> de {parseDate(today).day}
+      </p>
 
       <h2 className="section-title">Menos usadas</h2>
       {leastUsed.length === 0 ? (
@@ -143,7 +157,10 @@ export default function UsoPage() {
         </ol>
       )}
 
-      <h2 className="section-title">Historial</h2>
+      <div className="section-row">
+        <h2 className="section-title">Historial</h2>
+        <Link to="/calendario">Ver calendario</Link>
+      </div>
       {groups.length === 0 ? (
         <p className="page-hint">Todavía no has usado ningún outfit. Toca «Me lo pongo» en Hoy para empezar tu historial.</p>
       ) : (

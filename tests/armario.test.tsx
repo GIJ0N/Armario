@@ -20,6 +20,7 @@ import App from '../src/App'
 import { fakeRepo } from './fixtures/fakeRepo'
 import { memoryFeedback } from './fixtures/memoryFeedback'
 import { memoryOutfits } from './fixtures/memoryOutfits'
+import { memoryPlans } from './fixtures/memoryPlans'
 import { memoryPurchases } from './fixtures/memoryPurchases'
 
 // jsdom no decodifica imágenes: simulamos el redimensionado.
@@ -44,6 +45,7 @@ function createFakeRepo(): Repository & { items: Garment[] } {
     taste: mem.taste,
     purchases: memoryPurchases(() => items).purchases,
     wears: fakeRepo(items).wears,
+    plans: memoryPlans([], []).plans,
     outfits: out.outfits,
     swaps: out.swaps,
     list: async (f) => byFilter(f),

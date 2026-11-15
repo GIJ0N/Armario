@@ -29,7 +29,7 @@ describe('migración 0007', () => {
     db.exec("INSERT INTO wears (id, outfit_id, date) VALUES ('w1','o1','2026-11-10')")
     expect(runMigrations(db)).toBe(true)
     expect(Number(db.selectValue('PRAGMA user_version'))).toBe(MIGRATIONS.length)
-    expect(MIGRATIONS).toHaveLength(7)
+    expect(MIGRATIONS).toHaveLength(8)
     expect(db.selectObjects('SELECT id, favorite, canvas_adjust FROM garments')).toEqual([{ id: 'g1', favorite: 1, canvas_adjust: null }])
     expect(db.selectObjects('SELECT id, name, saved_at, canvas_layout FROM outfits')).toEqual([
       { id: 'o1', name: 'Mi outfit', saved_at: 'then', canvas_layout: null },

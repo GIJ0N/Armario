@@ -44,6 +44,11 @@ export interface EngineContext {
   recentOutfits: RecentOutfit[]
   /** YYYY-MM-DD (fecha local). */
   today: string
+  /**
+   * Fase 13b: outfits PLANEADOS (calendario) cercanos a `today`. Los de ±PLANNED_WINDOW_DAYS días cuentan como «ocupados»:
+   * su combinación no se repite (regla dura) y sus prendas se penalizan un poco (regla blanda, acotada).
+   */
+  plannedOutfits?: RecentOutfit[]
   /** Fase 5: preferencias deterministas calculadas de las calificaciones. */
   taste?: TastePreferences
   /** Fase 5: perfil de gusto en texto (solo para el prompt del estilista). */

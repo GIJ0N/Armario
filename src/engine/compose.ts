@@ -13,7 +13,8 @@ import {
 } from '../ai/prompts/stylist'
 import { OCCASION_LABELS } from '../db/labels'
 import { composeFallback } from './fallback'
-import { buildPlan, type Plan } from './plan'
+import { buildPlan, PLANNED_WINDOW_DAYS, type Plan } from './plan'
+import { daysBetween } from './dates'
 import type { EngineContext, OutfitSource, SuggestedOutfit } from './types'
 import { validateOutfit } from './validate'
 
@@ -76,7 +77,10 @@ function promptFor(plan: Plan, errors?: string[]) {
       outerwearRequired: filter.needsOuterwear,
       outerwearRecommended: filter.outerwearAdvice === 'recommended',
       candidates: candidatesFor(plan),
-      recentOutfits: ctx.recentOutfits.map((o) => o.garmentIds),
+      recentOutfits: [
+        ...ctx.recentOutfits,
+        ...(ctx.plannedOutfits ?? []).filter((o) => Math.abs(daysBetween(o.date, ctx.today)) <= PLANNED_WINDOW_DAYS),
+      ].map((o) => o.garmentIds),
       errors,
       ...(plan.requireFavorite
         ? { favoriteIds: ctx.garments.filter((g) => g.favorite && plan.filter.eligibleIds.has(g.id)).map((g) => g.id) }

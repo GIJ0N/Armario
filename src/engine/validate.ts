@@ -48,7 +48,8 @@ export function validateOutfit(
   }
 
   const key = comboKey(ids, plan.byId)
-  if (plan.recentKeys.has(key)) errors.push('This outfit repeats an outfit worn (or already shown) in the last 14 days.')
+  if (plan.plannedKeys.has(key)) errors.push('This outfit repeats an outfit already planned within 2 days of this date.')
+  else if (plan.recentKeys.has(key)) errors.push('This outfit repeats an outfit worn (or already shown) in the last 14 days.')
   if ((opts.batch ?? []).some((o) => comboKey(o.garmentIds, plan.byId) === key)) {
     errors.push('This outfit duplicates another outfit in the same answer.')
   }

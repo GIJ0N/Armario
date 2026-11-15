@@ -26,7 +26,7 @@ Antes de cerrar una fase, lint, typecheck, test y build deben pasar sin errores.
 
 ## Almacenamiento
 
-SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción de escritura se exporta la base completa (`sqlite3_js_db_export`) a IndexedDB y al abrir se restaura con `sqlite3_deserialize`; no se usa OPFS (GitHub Pages no permite COOP/COEP y OPFS es irregular en iOS). Las fotos son Blobs en otro object store de IndexedDB; `garments.photo_path` guarda la clave (`photo:<uuid>`). La UI solo usa `GarmentRepository` (`src/db/repository.ts`) y el adaptador `Storage` (`src/db/storage.ts`), de modo que el backend se puede reemplazar. Migraciones en `src/db/migrations/`, con `PRAGMA user_version`. La migración 0005 agrega `garments.cutout_path` y `cutout_kind` (ver «Recorte de fondo»); la 0006, `garments.favorite`, `outfits.saved_at`/`name` y la tabla `outfit_swaps` (ver «Edición y favoritos»); la 0007, `garments.canvas_adjust` y `outfits.canvas_layout` (JSON nulos, ver «Lienzo ajustable»).
+SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción de escritura se exporta la base completa (`sqlite3_js_db_export`) a IndexedDB y al abrir se restaura con `sqlite3_deserialize`; no se usa OPFS (GitHub Pages no permite COOP/COEP y OPFS es irregular en iOS). Las fotos son Blobs en otro object store de IndexedDB; `garments.photo_path` guarda la clave (`photo:<uuid>`). La UI solo usa `GarmentRepository` (`src/db/repository.ts`) y el adaptador `Storage` (`src/db/storage.ts`), de modo que el backend se puede reemplazar. Migraciones en `src/db/migrations/`, con `PRAGMA user_version`. La migración 0005 agrega `garments.cutout_path` y `cutout_kind` (ver «Recorte de fondo»); la 0006, `garments.favorite`, `outfits.saved_at`/`name` y la tabla `outfit_swaps` (ver «Edición y favoritos»); la 0007, `garments.canvas_adjust` y `outfits.canvas_layout` (JSON nulos, ver «Lienzo ajustable»); la 0008, la tabla `planned_outfits` (ver «Calendario»).
 
 ## IA
 
@@ -41,7 +41,7 @@ SQLite WASM (`@sqlite.org/sqlite-wasm`) corre en memoria. Tras cada transacción
 
 ## Estado
 
-Fase actual: 13a completada (lienzo ajustable y compartir); pendiente: calendario, costo por uso, viaje
+Fase actual: 13b completada (calendario y plan semanal); pendiente opcional: costo por uso, lista de viaje
 
 ## Gusto
 
@@ -114,3 +114,14 @@ El lienzo automático (`layoutOutfit`) se puede corregir a mano; todo es opciona
 - **Detalle de la prenda**: `GarmentSizeSection` («Tamaño en el maniquí»): vista previa de la prenda sola, deslizador 50–200 % (se guarda ~350 ms después del último cambio y al salir) y «Restablecer».
 - **Compartir como imagen**: «Compartir» en las tarjetas de Hoy y en Outfits guardados. `src/canvas/share.ts`: `drawOutfit` (geometría pura sobre una `DrawSurface` mínima de canvas 2D: fondo = `--surface-photo` resuelto con estilos calculados, maniquí, prendas por `z` con sus cajas ajustadas, mosaicos enmarcados con marco/alfiler) y `renderOutfitPng` con superficie y cargador de imágenes inyectables; el maniquí sale de `src/canvas/mannequin.ts` (`mannequinSvgMarkup`, mismos trazos que el componente) con colores resueltos (`currentPalette`). Salida de (320+32)×3 por (600+32)×3 px. `src/canvas/webShare.ts` (`shareImageFile`): `navigator.share({files})` si `canShare` lo permite, si no descarga; cerrar la hoja no es error. Si algo falla: aviso «No se pudo compartir la imagen», sin lanzar.
 - **Pruebas**: `tests/canvasAdjust.test.ts`, `fase13Db.test.ts`, `canvasShare.test.ts`, `canvasAdjustUi.test.tsx` (eventos de puntero en jsdom con `getBoundingClientRect` simulado; `renderOutfitPng` y `shareImageFile` simulados en la UI) y un e2e (Hoy › Ajustar › Listo, recarga, detalle de la prenda).
+
+## Calendario
+
+Ruta `/calendario` (icono en el encabezado de Hoy, fila en Yo y «Ver calendario» en Uso; la pestaña Hoy sigue activa). Sin IA obligatoria, fechas siempre locales (aritmética entera, nunca `toISOString`).
+
+- **Datos**: migración 0008 `planned_outfits` (`id`, `outfit_id` con `ON DELETE CASCADE`, `date`, `occasion`, `created_at`, `UNIQUE(outfit_id,date)`, índice por fecha). `repo.plans`: `create` (idempotente), `listBetween`, `listForOutfit`, `remove`, `convertToWear`, `setOutfit`; `repo.wears.listBetween`. Un outfit planeado es una fila de `outfits` más una de `planned_outfits`.
+- **Plan a uso**: `convertToWear` (una sola transacción) crea el uso y borra el plan; rechaza fechas futuras. En el calendario, una fecha pasada o de hoy se registra como usada y una futura como planeada. `commitOutfitEdit` acepta `planId`/`wearDate`: si el outfit tiene historial o está planeado en otra fecha se crea una fila nueva y el plan (o el uso) se mueve a ella.
+- **Motor**: los outfits planeados a ±2 días de la fecha (`PLANNED_WINDOW_DAYS`) cuentan como «tomados»: repetir la combinación es error duro en `validateOutfit` y cada prenda ya planeada resta `PLANNED_GARMENT_PENALTY` (8) en `scoreCombo`, con tope `PLANNED_PENALTY_CAP` (30). `EngineContext.plannedOutfits` los recibe y también se pasan al prompt del estilista.
+- **Plan semanal** (`PlanWeekSheet`, `src/calendar/planWeek.ts`, `suggest.ts`): elige días (por defecto los próximos 5 laborables sin plan) y ocasión, genera en secuencia (cada día ve los anteriores como planeados), se puede pedir otra opción, cambiar piezas o quitar un día; «Guardar plan» crea outfits y planes, cancelar no escribe nada.
+- **Pronóstico**: `loadDailyForecast` pide 7 días a Open-Meteo, caché de 1 h en `localStorage` (`armario.weather.daily`) y respaldo con la caché vencida sin conexión. Fuera de rango o sin datos se usa el preajuste «templado» y se avisa «sin pronóstico: clima templado».
+- **Interfaz**: `MonthGrid` (`role="grid"`, lunes primero, tabindex móvil y flechas/Inicio/Fin/AvPág, deslizar con pointer events, celdas ≥ 44 px, miniaturas 2×2 `OutfitThumbs` en lugar del maniquí, que no se lee a ese tamaño); `DayFlow` (hoja del día: usado/planeado, agregar, guardar, cambiar). Uso muestra «Días con outfit registrado este mes: N de M».

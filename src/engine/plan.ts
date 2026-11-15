@@ -7,6 +7,13 @@ import type { EngineContext } from './types'
 
 /** Un outfit no puede repetirse dentro de esta ventana (días). */
 export const NO_REPEAT_DAYS = 14
+/** Fase 13b: ventana (días a cada lado de la fecha) en que un outfit planeado cuenta como «ocupado». */
+export const PLANNED_WINDOW_DAYS = 2
+/** Puntos de penalización por cada aparición (máx. 2 por prenda) de una prenda en un plan cercano. */
+export const PLANNED_GARMENT_PENALTY = 8
+/** Tope de la penalización total por outfit: bien por debajo de los 100 puntos de una prenda prioritaria. */
+export const PLANNED_PENALTY_CAP = 30
+
 /** Tope de combinaciones exploradas para no bloquear la UI. */
 export const MAX_COMBO_ITERATIONS = 400_000
 
@@ -19,6 +26,10 @@ export interface Plan {
   priorityIds: Set<string>
   /** Claves (ids no accesorio ordenados) de outfits recientes. */
   recentKeys: Set<string>
+  /** Fase 13b: claves (ver `comboKey`) de outfits planeados a ±2 días; se rechazan como los recientes (ya están en `recentKeys`). */
+  plannedKeys: Set<string>
+  /** Fase 13b: veces que cada prenda (no accesorio) aparece en un plan a ±2 días; alimenta la penalización blanda. */
+  plannedUse: Map<string, number>
   /** Hay al menos una combinación base posible. */
   hasCombos: boolean
   /** Pares con «no me gusta» que se rechazan en validación (vacío si no hay alternativas suficientes). */
@@ -54,6 +65,14 @@ export function hasAvoidedPair(ids: string[], byId: Map<string, Garment>, pairs:
   const core = [...new Set(ids)].filter((id) => byId.get(id) && byId.get(id)!.category !== 'accessory')
   for (let i = 0; i < core.length; i++) for (let j = i + 1; j < core.length; j++) if (set.has(pairKey(core[i], core[j]))) return true
   return false
+}
+
+/** Penalización blanda (≥ 0, acotada) por usar prendas ya planeadas en días cercanos. */
+export function plannedPenalty(plan: Pick<Plan, 'plannedUse'>, items: Garment[]): number {
+  if (plan.plannedUse.size === 0) return 0
+  let total = 0
+  for (const g of items) total += Math.min(plan.plannedUse.get(g.id) ?? 0, 2) * PLANNED_GARMENT_PENALTY
+  return Math.min(total, PLANNED_PENALTY_CAP)
 }
 
 /** Clave de un outfit: ids de prendas no accesorio, ordenados. */
@@ -128,6 +147,17 @@ function buildPlanWith(ctx: EngineContext, applyTaste: boolean): Plan {
       })
       .map((o) => comboKey(o.garmentIds, byId)),
   )
+  const plannedKeys = new Set<string>()
+  const plannedUse = new Map<string, number>()
+  for (const o of ctx.plannedOutfits ?? []) {
+    if (Math.abs(daysBetween(o.date, ctx.today)) > PLANNED_WINDOW_DAYS) continue
+    plannedKeys.add(comboKey(o.garmentIds, byId))
+    for (const id of new Set(o.garmentIds)) {
+      if (byId.get(id) && byId.get(id)!.category !== 'accessory') plannedUse.set(id, (plannedUse.get(id) ?? 0) + 1)
+    }
+  }
+  // Un combo planeado cerca es tan «ocupado» como uno usado hace poco: se excluye al recorrer combinaciones.
+  for (const k of plannedKeys) recentKeys.add(k)
   const plan: Plan = {
     ctx,
     filter,
@@ -135,6 +165,8 @@ function buildPlanWith(ctx: EngineContext, applyTaste: boolean): Plan {
     byId,
     priorityIds: new Set(),
     recentKeys,
+    plannedKeys,
+    plannedUse,
     hasCombos: false,
     avoidPairs: new Set(),
     tasteApplied: applyTaste && tasteTightens(ctx.occasion, ctx.taste),
