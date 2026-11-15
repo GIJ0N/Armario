@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { GeminiProvider } from '../ai/gemini'
-import { AiNotConfiguredError, describeAiError } from '../ai/errors'
+import { AiNotConfiguredError, aiErrorDetail, describeAiError } from '../ai/errors'
 import { useAi } from '../ai/AiProviderContext'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useRepository } from '../components/RepositoryContext'
@@ -11,7 +11,12 @@ import { exportBackupNow, reloadApp, restoreBackupFile } from '../lib/backupActi
 import { describeLastBackup, getLastBackupAt, useBackupStateVersion } from '../lib/backupState'
 import { useSettings } from '../settings'
 
-type Probe = { kind: 'idle' } | { kind: 'running' } | { kind: 'ok' } | { kind: 'error'; message: string }
+type Probe =
+  | { kind: 'idle' }
+  | { kind: 'running' }
+  | { kind: 'ok' }
+  | { kind: 'error'; message: string; detail?: string }
+  | { kind: 'missingModel'; model: string; flash: string[] }
 
 interface TasteView {
   summary: string
@@ -141,6 +146,18 @@ export default function AjustesPage() {
       const provider = settings.geminiApiKey
         ? new GeminiProvider({ apiKey: settings.geminiApiKey, model: settings.geminiModel })
         : ai.getProvider()
+      if (provider instanceof GeminiProvider) {
+        // Primero se distingue red / key / modelo con un GET que no genera contenido.
+        const models = await provider.listModels()
+        if (!models.some((m) => m.id === settings.geminiModel)) {
+          const flash = models
+            .filter((m) => m.supportsGenerateContent && m.id.includes('flash'))
+            .map((m) => m.id)
+            .slice(0, 5)
+          setProbe({ kind: 'missingModel', model: settings.geminiModel, flash })
+          return
+        }
+      }
       await provider.generateJson({
         system: 'You are a connectivity check. Respond with JSON only.',
         user: 'Return {"ok": true}.',
@@ -153,7 +170,7 @@ export default function AjustesPage() {
       })
       setProbe({ kind: 'ok' })
     } catch (e) {
-      setProbe({ kind: 'error', message: describeAiError(e) })
+      setProbe({ kind: 'error', message: describeAiError(e), detail: aiErrorDetail(e) })
     }
   }
 
@@ -204,6 +221,40 @@ export default function AjustesPage() {
             <p role="alert" className="form-error">
               {probe.message}
             </p>
+          )}
+          {probe.kind === 'error' && probe.detail && (
+            <p
+              className="page-hint"
+              data-testid="probe-detail"
+              style={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: '0.75rem', userSelect: 'text', WebkitUserSelect: 'text', wordBreak: 'break-all' }}
+            >
+              Detalle técnico: {probe.detail}
+            </p>
+          )}
+          {probe.kind === 'missingModel' && (
+            <>
+              <p role="alert" className="form-error">
+                Tu key funciona, pero el modelo «{probe.model}» no aparece.
+                {probe.flash.length > 0 ? ' Modelos Flash disponibles:' : ' No hay modelos Flash disponibles para generar contenido.'}
+              </p>
+              {probe.flash.length > 0 && (
+                <div className="chip-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {probe.flash.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        update({ geminiModel: id })
+                        setProbe({ kind: 'idle' })
+                      }}
+                    >
+                      {id}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
