@@ -36,6 +36,8 @@ export interface BackgroundRemover {
   remove(image: Blob): Promise<Blob>
   /** Motor usado en la última llamada a remove (webgpu / wasm). */
   readonly lastEngine: Exclude<CutoutEngine, 'bbox'> | null
+  /** Veces que se recicló el worker para liberar memoria (solo el quitafondos real). */
+  readonly recycleCount?: number
   /** Libera el worker (p. ej. tras un tiempo límite o al cambiar de motor). */
   dispose?(): void
 }

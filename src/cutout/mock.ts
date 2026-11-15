@@ -17,6 +17,7 @@ export class MockBackgroundRemover implements BackgroundRemover {
   readyCalls = 0
   disposeCalls = 0
   lastEngine: 'webgpu' | 'wasm' | null = null
+  recycleCount = 0
   options: MockRemoverOptions
   private downloaded: boolean
 

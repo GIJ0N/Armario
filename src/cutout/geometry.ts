@@ -298,6 +298,14 @@ export function cleanMaskAlpha(alpha: Uint8ClampedArray, w: number, h: number, o
  */
 export function decontaminateEdges(rgba: Uint8ClampedArray, alpha: Uint8ClampedArray, w: number, h: number): void {
   const OPAQUE = 250
+  let partial = false
+  for (let i = 0; i < alpha.length; i++) {
+    if (alpha[i] > 0 && alpha[i] < OPAQUE) {
+      partial = true
+      break
+    }
+  }
+  if (!partial) return
   const src = new Uint8ClampedArray(rgba)
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -332,11 +340,59 @@ export function decontaminateEdges(rgba: Uint8ClampedArray, alpha: Uint8ClampedA
   }
 }
 
+/** Caja mínima de los píxeles con alfa > threshold en un plano de un byte por píxel; null si no hay ninguno. */
+export function alphaPlaneBoundingBox(alpha: Uint8ClampedArray, w: number, h: number, threshold = 16): Rect | null {
+  let minX = w
+  let minY = h
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (alpha[y * w + x] > threshold) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  if (maxX < 0) return null
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 }
+}
+
 /**
- * Aplica la máscara a una imagen RGBA y la recorta al contenido con margen.
+ * Aplica una máscara ya en 0–255 (como la manda el worker) a una imagen RGBA y la recorta al contenido con margen.
  * La limpieza (ver `cleanMaskAlpha`) se hace a la resolución de la máscara; después el alfa se reescala a la foto.
  * La cobertura se mide con el alfa ya limpio. Devuelve null si no queda nada de prenda.
+ * Memoria: se recorta primero y el alfa solo se escribe en la región recortada (no hay copia RGBA completa).
  */
+export function cutoutFromAlpha(
+  rgba: Uint8ClampedArray,
+  w: number,
+  h: number,
+  maskAlpha: Uint8ClampedArray,
+  maskW: number,
+  maskH: number,
+  paddingFraction = 0.03,
+): { rgba: Uint8ClampedArray; width: number; height: number; coverage: number } | null {
+  const cleaned = cleanMaskAlpha(maskAlpha, maskW, maskH)
+  const alpha = resizeAlpha(cleaned, maskW, maskH, w, h)
+  const coverage = alphaCoverage(alpha)
+  const box = alphaPlaneBoundingBox(alpha, w, h)
+  if (!box) return null
+  const rect = padRect(box, w, h, paddingFraction)
+  const cropped = cropRgba(rgba, w, rect)
+  const croppedAlpha = new Uint8ClampedArray(rect.w * rect.h)
+  for (let y = 0; y < rect.h; y++) {
+    const from = (rect.y + y) * w + rect.x
+    croppedAlpha.set(alpha.subarray(from, from + rect.w), y * rect.w)
+  }
+  for (let i = 0; i < croppedAlpha.length; i++) cropped[i * 4 + 3] = croppedAlpha[i]
+  decontaminateEdges(cropped, croppedAlpha, rect.w, rect.h)
+  return { rgba: cropped, width: rect.w, height: rect.h, coverage }
+}
+
+/** Como `cutoutFromAlpha`, pero con la salida cruda del modelo (cualquier rango; se normaliza mín–máx). */
 export function cutoutFromMask(
   rgba: Uint8ClampedArray,
   w: number,
@@ -345,21 +401,6 @@ export function cutoutFromMask(
   maskW: number,
   maskH: number,
   paddingFraction = 0.03,
-): { rgba: Uint8ClampedArray; width: number; height: number; coverage: number } | null {
-  const cleaned = cleanMaskAlpha(maskToAlpha(mask), maskW, maskH)
-  const alpha = resizeAlpha(cleaned, maskW, maskH, w, h)
-  const coverage = alphaCoverage(alpha)
-  const masked = applyAlpha(rgba, alpha)
-  const box = alphaBoundingBox(masked, w, h)
-  if (!box) return null
-  const rect = padRect(box, w, h, paddingFraction)
-  const cropped = cropRgba(masked, w, rect)
-  decontaminateEdges(cropped, alphaChannel(cropped), rect.w, rect.h)
-  return { rgba: cropped, width: rect.w, height: rect.h, coverage }
-}
-
-function alphaChannel(rgba: Uint8ClampedArray): Uint8ClampedArray {
-  const out = new Uint8ClampedArray(rgba.length / 4)
-  for (let i = 0; i < out.length; i++) out[i] = rgba[i * 4 + 3]
-  return out
+) {
+  return cutoutFromAlpha(rgba, w, h, maskToAlpha(mask), maskW, maskH, paddingFraction)
 }
