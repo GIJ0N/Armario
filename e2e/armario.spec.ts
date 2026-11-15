@@ -19,6 +19,8 @@ test('agregar, recargar, editar y eliminar una prenda', async ({ page }) => {
     h: img.naturalHeight,
   }))
   expect(Math.max(size.w, size.h)).toBe(1024)
+  // Sin API key: aviso hacia Ajustes y el formulario manual sigue funcionando.
+  await expect(page.getByText(/agrega tu API key/)).toBeVisible()
 
   await page.getByLabel('Categoría *').selectOption('top')
   await page.getByLabel('Subcategoría').fill('Camisa azul')
