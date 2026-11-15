@@ -1,4 +1,5 @@
 import type { Database, Sqlite3Static } from '@sqlite.org/sqlite-wasm'
+import { normalizeGarmentAdjust, normalizeLayout, parseCanvasLayout, parseGarmentAdjust, type GarmentAdjust, type OutfitLayout } from '../canvas/adjust'
 import { addDays, localDateString } from '../lib/date'
 import { getSqliteStatic, openSqlite, saveSnapshot } from './sqlite'
 import type { Storage } from './storage'
@@ -43,6 +44,8 @@ export interface GarmentRepository {
   setCutout(id: string, blob: Blob, kind: CutoutKind): Promise<Garment>
   /** Quita el recorte (columnas y blob); la foto original no se toca. */
   clearCutout(id: string): Promise<Garment>
+  /** Fase 13a: guarda (o quita con null) el ajuste de tamaño/posición de la prenda en el maniquí; valores acotados y normalizados. */
+  setCanvasAdjust(id: string, adj: GarmentAdjust | null): Promise<Garment>
   close(): void
 }
 
@@ -62,6 +65,8 @@ export interface OutfitRepository {
   unsave(id: string): Promise<Outfit>
   /** Outfits guardados, el más reciente primero, con su último uso. */
   listSaved(): Promise<SavedOutfit[]>
+  /** Fase 13a: guarda (o quita con null) los ajustes manuales del lienzo de este outfit. */
+  setCanvasLayout(id: string, layout: OutfitLayout | null): Promise<Outfit>
 }
 
 /** Señales de cambios manuales (fase 12): alimentan una pequeña corrección del gusto. */
@@ -165,6 +170,7 @@ function rowToGarment(row: Row): Garment {
     cutout_path: (row.cutout_path as string | null) ?? null,
     cutout_kind: (row.cutout_kind as CutoutKind | null) ?? null,
     favorite: row.favorite === 1,
+    canvas_adjust: parseGarmentAdjust(row.canvas_adjust),
   }
 }
 
@@ -179,6 +185,7 @@ function rowToOutfit(row: Row): Outfit {
     created_at: row.created_at as string,
     saved_at: (row.saved_at as string | null) ?? null,
     name: (row.name as string | null) ?? null,
+    canvas_layout: parseCanvasLayout(row.canvas_layout),
   }
 }
 
@@ -253,6 +260,7 @@ export class SqliteGarmentRepository implements Repository {
     hasHistory: async (id) =>
       this.db.selectValue('SELECT 1 FROM wears WHERE outfit_id = ? LIMIT 1', [id]) !== undefined ||
       this.db.selectValue('SELECT 1 FROM feedback WHERE outfit_id = ? LIMIT 1', [id]) !== undefined,
+    setCanvasLayout: (id, layout) => this.setOutfitCanvasLayout(id, layout),
     save: (id, name) => this.setOutfitSaved(id, true, name),
     unsave: (id) => this.setOutfitSaved(id, false),
     listSaved: async () =>
@@ -429,7 +437,7 @@ export class SqliteGarmentRepository implements Repository {
       })
       if (data.favorite) this.db.exec({ sql: 'UPDATE garments SET favorite=1 WHERE id=?', bind: [id] })
     })
-    return { ...data, id, created_at, cutout_path: null, cutout_kind: null, favorite: !!data.favorite }
+    return { ...data, id, created_at, cutout_path: null, cutout_kind: null, favorite: !!data.favorite, canvas_adjust: null }
   }
 
   async update(id: string, input: GarmentInput) {
@@ -476,6 +484,7 @@ export class SqliteGarmentRepository implements Repository {
       created_at: before.created_at,
       cutout_path: photoChanged ? null : (before.cutout_path ?? null),
       cutout_kind: photoChanged ? null : (before.cutout_kind ?? null),
+      canvas_adjust: before.canvas_adjust ?? null,
     }
   }
 
@@ -492,6 +501,16 @@ export class SqliteGarmentRepository implements Repository {
       this.db.exec({ sql: 'UPDATE garments SET favorite=? WHERE id=?', bind: [favorite ? 1 : 0, id] })
     })
     return { ...before, favorite }
+  }
+
+  async setCanvasAdjust(id: string, adj: GarmentAdjust | null) {
+    const before = this.select(id)
+    if (!before) throw new Error('Prenda no encontrada')
+    const clean = normalizeGarmentAdjust(adj)
+    await this.write(() => {
+      this.db.exec({ sql: 'UPDATE garments SET canvas_adjust=? WHERE id=?', bind: [clean ? JSON.stringify(clean) : null, id] })
+    })
+    return { ...before, canvas_adjust: clean }
   }
 
   async delete(id: string) {
@@ -585,6 +604,17 @@ export class SqliteGarmentRepository implements Repository {
         bind.push(patch.occasion)
       }
       this.db.exec({ sql: `UPDATE outfits SET ${sets.join(', ')} WHERE id=?`, bind: [...bind, id] })
+    })
+    return this.selectOutfit(id)!
+  }
+
+  private async setOutfitCanvasLayout(id: string, layout: OutfitLayout | null): Promise<Outfit> {
+    const clean = normalizeLayout(layout)
+    await this.write(() => {
+      if (this.db.selectValue('SELECT 1 FROM outfits WHERE id = ?', [id]) === undefined) {
+        throw new Error('Outfit no encontrado')
+      }
+      this.db.exec({ sql: 'UPDATE outfits SET canvas_layout=? WHERE id=?', bind: [clean ? JSON.stringify(clean) : null, id] })
     })
     return this.selectOutfit(id)!
   }

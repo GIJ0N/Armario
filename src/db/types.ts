@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { GarmentAdjust, OutfitLayout } from '../canvas/adjust'
 import type { Weather } from '../engine/types'
 
 export const CATEGORIES = ['top', 'bottom', 'shoes', 'outerwear', 'accessory'] as const
@@ -53,6 +54,8 @@ export interface Garment extends GarmentData {
   /** Clave del recorte (`cutout:<uuid>`) en el almacén de fotos; null/ausente si no hay recorte. */
   cutout_path?: string | null
   cutout_kind?: CutoutKind | null
+  /** Fase 13a: ajuste manual de tamaño/posición en el maniquí, válido en todos los outfits; null/ausente = automático. */
+  canvas_adjust?: GarmentAdjust | null
 }
 
 export interface GarmentFilter {
@@ -79,6 +82,8 @@ export interface Outfit extends OutfitInput {
   saved_at?: string | null
   /** Nombre opcional del outfit guardado. */
   name?: string | null
+  /** Fase 13a: ajustes manuales de este outfit (id de prenda → {dx,dy,scale,z}); null/ausente = automático. */
+  canvas_layout?: OutfitLayout | null
 }
 
 /** Outfit guardado con la fecha de su último uso (YYYY-MM-DD; null si nunca se ha usado). */

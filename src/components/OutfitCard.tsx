@@ -9,6 +9,7 @@ import {
   type Rating,
 } from '../db'
 import type { OutfitSource } from '../engine'
+import type { AdjustChange, OutfitLayout } from '../canvas/adjust'
 import { OutfitVisual } from './OutfitVisual'
 
 const SOURCE_LABELS = { ia: 'IA', reglas: 'reglas', manual: 'manual' } as const
@@ -41,6 +42,12 @@ interface OutfitCardProps {
   onToggleSave?: () => void
   /** Tras «Me lo pongo»: abre la hoja «Mandar a lavandería». */
   onLaundry?: () => void
+  /** Fase 13a: ajustes manuales del lienzo de este outfit y qué hacer al pulsar «Listo». Sin `onAdjustSave` no hay «Ajustar». */
+  layout?: OutfitLayout | null
+  onAdjustSave?: (change: AdjustChange) => void | Promise<void>
+  onAdjustingChange?: (adjusting: boolean) => void
+  /** Muestra «Compartir» (imagen del lienzo). */
+  shareable?: boolean
 }
 
 const RATING_TEXT: Record<Rating, string> = { like: 'Me gusta', dislike: 'No me gusta' }
@@ -156,6 +163,10 @@ export function OutfitCard({
   saved = false,
   onToggleSave,
   onLaundry,
+  layout,
+  onAdjustSave,
+  onAdjustingChange,
+  shareable = false,
 }: OutfitCardProps) {
   const items = outfit.garmentIds.map((id) => garments.get(id)).filter((g): g is Garment => !!g)
   return (
@@ -185,7 +196,14 @@ export function OutfitCard({
           )}
         </span>
       </div>
-      <OutfitVisual items={items} onSelectGarment={onSelectGarment} />
+      <OutfitVisual
+        items={items}
+        onSelectGarment={onSelectGarment}
+        layout={layout}
+        onAdjustSave={onAdjustSave}
+        onAdjustingChange={onAdjustingChange}
+        shareable={shareable}
+      />
       <p className="outfit-reasoning">{outfit.reasoning}</p>
       {onRate && <RatingPanel feedback={feedback} onRate={onRate} />}
       <div className="outfit-actions">

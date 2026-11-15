@@ -3,6 +3,7 @@ import { ChevronLeft, Heart } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { GarmentForm, type GarmentFormSubmit } from '../components/GarmentForm'
+import { GarmentSizeSection } from '../components/GarmentSizeSection'
 import { CutoutControls } from '../components/CutoutControls'
 import { useRepository } from '../components/RepositoryContext'
 import { SkeletonBlock } from '../components/Skeleton'
@@ -115,6 +116,7 @@ export default function GarmentDetailPage() {
         </div>
       )}
       {garment.photo_path && <CutoutControls garment={garment} onChange={setGarment} />}
+      <GarmentSizeSection garment={garment} onChange={setGarment} />
       <GarmentForm initial={garment} submitLabel="Guardar cambios" onSubmit={save} />
       {error && <p role="alert" className="form-error">{error}</p>}
       <button type="button" className="btn btn-danger btn-block" onClick={() => setConfirming(true)}>

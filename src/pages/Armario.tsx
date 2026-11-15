@@ -257,6 +257,7 @@ export default function ArmarioPage() {
               garmentIds: value.garmentIds,
               occasion: value.occasion,
               name: value.name,
+              canvasLayout: value.canvasLayout,
               categoryOf: (id) => byId.get(id)?.category,
             })
             setCreating(null)

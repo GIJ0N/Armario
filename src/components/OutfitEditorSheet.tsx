@@ -9,14 +9,19 @@ import {
   type Occasion,
 } from '../db'
 import { structureIssues, validateManualOutfit, type WearRecord } from '../engine'
+import { pruneLayout, type AdjustChange, type GarmentAdjust, type OutfitLayout } from '../canvas/adjust'
 import { BottomSheet } from './BottomSheet'
+import { OutfitAdjustSheet } from './OutfitAdjustSheet'
 import { OutfitVisual } from './OutfitVisual'
+import { useRepository } from './RepositoryContext'
 import { SlotPicker, type EditContext } from './OutfitEditFlow'
 
 export interface EditorValue {
   garmentIds: string[]
   occasion: Occasion
   name: string
+  /** Ajustes de lienzo del outfit (solo de las prendas elegidas); null si no hay. */
+  canvasLayout: OutfitLayout | null
 }
 
 interface Props {
@@ -25,7 +30,7 @@ interface Props {
   garments: Garment[]
   wears: WearRecord[]
   today: string
-  initial?: { garmentIds: string[]; occasion: Occasion; name: string }
+  initial?: { garmentIds: string[]; occasion: Occasion; name: string; canvasLayout?: OutfitLayout | null }
   saveLabel?: string
   onSave: (value: EditorValue) => Promise<void> | void
   onClose: () => void
@@ -50,10 +55,17 @@ export function OutfitEditorSheet({ title, garments, wears, today, initial, save
   const [name, setName] = useState(initial?.name ?? '')
   const [picking, setPicking] = useState<Picking | null>(null)
   const [busy, setBusy] = useState(false)
+  const repo = useRepository()
+  const [layout, setLayout] = useState<OutfitLayout | null>(initial?.canvasLayout ?? null)
+  const [adjustOverrides, setAdjustOverrides] = useState<Record<string, GarmentAdjust | null>>({})
+  const [adjusting, setAdjusting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const byId = useMemo(() => new Map(garments.map((g) => [g.id, g])), [garments])
-  const items = ids.map((id) => byId.get(id)).filter((g): g is Garment => !!g)
+  const items = ids
+    .map((id) => byId.get(id))
+    .filter((g): g is Garment => !!g)
+    .map((g) => (g.id in adjustOverrides ? { ...g, canvas_adjust: adjustOverrides[g.id] } : g))
   const ctx: EditContext = useMemo(
     () => ({ occasion, weather: null, garments, wears, today }),
     [occasion, garments, wears, today],
@@ -67,11 +79,29 @@ export function OutfitEditorSheet({ title, garments, wears, today, initial, save
     setBusy(true)
     setError(null)
     try {
-      await onSave({ garmentIds: ids, occasion, name: name.trim() })
+      await onSave({ garmentIds: ids, occasion, name: name.trim(), canvasLayout: pruneLayout(layout, ids) })
     } catch {
       setError('No se pudo guardar el outfit.')
       setBusy(false)
     }
+  }
+
+  /** «Listo» del ajuste: el de este outfit queda en el estado del editor hasta guardar; el de la prenda se guarda ya. */
+  async function applyAdjust(change: AdjustChange) {
+    setLayout(change.layout)
+    setAdjusting(false)
+    const entries = Object.entries(change.garments)
+    if (entries.length === 0) return
+    setAdjustOverrides((cur) => ({ ...cur, ...change.garments }))
+    try {
+      for (const [id, adj] of entries) await repo.setCanvasAdjust(id, adj)
+    } catch {
+      setError('No se pudo guardar el ajuste de la prenda.')
+    }
+  }
+
+  if (adjusting) {
+    return <OutfitAdjustSheet items={items} layout={layout} onSave={applyAdjust} onClose={() => setAdjusting(false)} />
   }
 
   if (picking) {
@@ -134,7 +164,7 @@ export function OutfitEditorSheet({ title, garments, wears, today, initial, save
         ))}
       </div>
       {items.length > 0 && (
-        <OutfitVisual items={items} size="small" onSelectGarment={(id) => setPicking({ category: byId.get(id)!.category, replaceId: id })} />
+        <OutfitVisual items={items} size="small" layout={layout} onAdjustRequest={() => setAdjusting(true)} onSelectGarment={(id) => setPicking({ category: byId.get(id)!.category, replaceId: id })} />
       )}
       <ul className="editor-rows" aria-label="Piezas del outfit">
         {REQUIRED.map((r) => row(r.label, r.category, slot(r.category)[0], false))}

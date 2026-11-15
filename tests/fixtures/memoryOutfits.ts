@@ -1,3 +1,4 @@
+import { normalizeLayout } from '../../src/canvas/adjust'
 import type { FeedbackEntry, NewOutfitSwap, Outfit, OutfitRepository, OutfitSwap, SwapRepository } from '../../src/db'
 
 interface WearLike {
@@ -19,7 +20,7 @@ export function memoryOutfits(
   }
   const outfits: OutfitRepository = {
     create: async (input) => {
-      const o: Outfit = { ...input, id: `o${rows.length + 1}`, created_at: new Date().toISOString(), saved_at: null, name: null }
+      const o: Outfit = { ...input, id: `o${rows.length + 1}`, created_at: new Date().toISOString(), saved_at: null, name: null, canvas_layout: null }
       rows.push(o)
       return o
     },
@@ -34,6 +35,11 @@ export function memoryOutfits(
       return o
     },
     hasHistory: async (id) => wears().some((w) => w.outfit_id === id) || ratings().some((r) => r.outfitId === id),
+    setCanvasLayout: async (id, layout) => {
+      const o = find(id)
+      o.canvas_layout = normalizeLayout(layout)
+      return o
+    },
     save: async (id, name) => {
       const o = find(id)
       o.saved_at ??= new Date().toISOString()

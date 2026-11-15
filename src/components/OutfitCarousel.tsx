@@ -1,7 +1,7 @@
 import { Children, useCallback, useRef, useState, type ReactNode } from 'react'
 
-/** Carrusel horizontal con scroll-snap (una tarjeta por vista) e indicador de puntos «1/3». */
-export function OutfitCarousel({ children, label = 'Outfits' }: { children: ReactNode; label?: string }) {
+/** Carrusel horizontal con scroll-snap (una tarjeta por vista) e indicador de puntos «1/3». `locked` (modo «Ajustar») bloquea el deslizamiento. */
+export function OutfitCarousel({ children, label = 'Outfits', locked = false }: { children: ReactNode; label?: string; locked?: boolean }) {
   const listRef = useRef<HTMLUListElement>(null)
   const [index, setIndex] = useState(0)
   const count = Children.count(children)
@@ -30,7 +30,7 @@ export function OutfitCarousel({ children, label = 'Outfits' }: { children: Reac
   }
 
   return (
-    <div className="carousel" data-testid="outfit-carousel">
+    <div className="carousel" data-testid="outfit-carousel" data-locked={locked || undefined}>
       <ul className="outfits outfits-carousel" ref={listRef} onScroll={onScroll} aria-label={label}>
         {children}
       </ul>
@@ -41,6 +41,7 @@ export function OutfitCarousel({ children, label = 'Outfits' }: { children: Reac
               key={i}
               type="button"
               className="carousel-dot"
+              disabled={locked}
               data-testid="carousel-dot"
               aria-label={`Outfit ${i + 1} de ${count}`}
               aria-current={i === index ? 'true' : undefined}

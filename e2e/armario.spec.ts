@@ -395,3 +395,53 @@ test('una imagen PNG con fondo transparente se usa como recorte, sin el modelo',
   expect(size.h).toBeLessThan(500)
   expect(size.w).toBeGreaterThanOrEqual(300)
 })
+
+test('lienzo ajustable: «Ajustar» en Hoy agranda una prenda del outfit guardado y se conserva tras recargar', async ({ page }) => {
+  await mockMildWeather(page)
+  for (const [category, name] of [
+    ['top', 'Polo ajuste'],
+    ['bottom', 'Chinos ajuste'],
+    ['shoes', 'Mocasines ajuste'],
+  ] as const) {
+    await page.goto('./#/agregar')
+    await page.getByLabel('Categoría *').selectOption(category)
+    await page.getByLabel('Subcategoría').fill(name)
+    await page.getByLabel('Formalidad *').selectOption('3')
+    await page.getByLabel('Abrigo *').selectOption('2')
+    await page.getByRole('button', { name: 'Guardar prenda' }).click()
+    await expect(page.getByText(name)).toBeVisible()
+  }
+
+  await page.goto('./#/')
+  await expect(page.getByTestId('weather-card')).toContainText('22°')
+  await page.getByRole('button', { name: 'Sugerir outfits' }).click()
+  const card = page.getByTestId('outfit-card').first()
+  await expect(card).toBeVisible()
+  await card.getByRole('button', { name: 'Guardar outfit' }).click()
+  await page.getByRole('dialog', { name: 'Guardar outfit' }).getByRole('button', { name: 'Guardar' }).click()
+  await expect(card.getByRole('button', { name: 'Quitar de guardados' })).toBeVisible()
+
+  const polo = card.locator('.canvas-stage [aria-label="Polo ajuste"]')
+  await expect(polo).toHaveAttribute('data-scale', '1')
+  await card.getByRole('button', { name: 'Ajustar' }).click()
+  await polo.click()
+  await card.getByRole('button', { name: 'Aumentar tamaño' }).click()
+  await card.getByRole('button', { name: 'Listo' }).click()
+  await expect(polo).toHaveAttribute('data-scale', '1.05')
+  // El aviso aparece cuando el ajuste ya se escribió en la base.
+  await expect(page.getByText('Ajuste guardado')).toBeVisible()
+
+  await page.reload()
+  await page.getByRole('link', { name: 'Armario' }).click()
+  await page.getByRole('tab', { name: 'Outfits' }).click()
+  await expect(page.getByTestId('saved-outfit').locator('[aria-label="Polo ajuste"].canvas-garment')).toHaveAttribute('data-scale', '1.05')
+
+  // Ajuste por prenda en el detalle: «Tamaño en el maniquí».
+  await page.getByRole('tab', { name: 'Prendas' }).click()
+  await page.getByRole('link', { name: /Editar Chinos ajuste/ }).click()
+  await page.getByLabel('Tamaño de la prenda en el maniquí').fill('130')
+  await expect(page.locator('[data-testid="garment-size"] .canvas-garment')).toHaveAttribute('data-scale', '1.3')
+  await page.waitForTimeout(700)
+  await page.reload()
+  await expect(page.getByLabel('Tamaño de la prenda en el maniquí')).toHaveValue('130')
+})
