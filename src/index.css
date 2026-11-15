@@ -88,3 +88,11 @@ body { min-height: 100dvh; -webkit-tap-highlight-color: transparent; }
 .dialog h2 { margin: 0 0 8px; font-size: 1.1rem; }
 .dialog p { margin: 0 0 16px; color: var(--muted); }
 .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+.ai-note { margin: 0; padding: 8px 10px; border-radius: 10px; background: #ede9fe; color: #5b21b6; font-size: 0.9rem; }
+.ai-status { display: flex; flex-direction: column; gap: 8px; }
+.ai-status:empty { display: none; }
+.key-row { display: flex; gap: 8px; }
+.key-row input { flex: 1; }
+.ok-msg { color: #047857; margin: 0; }
+.section-title { font-size: 1.05rem; margin: 8px 0 0; }

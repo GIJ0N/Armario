@@ -1,7 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AiProviderContextProvider } from '../src/ai/AiProviderContext'
+import { AiNetworkError } from '../src/ai/errors'
+import { MockAiProvider } from '../src/ai/mock'
+import type { AiProvider } from '../src/ai/provider'
+import { saveSettings } from '../src/settings'
 import { RepositoryProvider } from '../src/components/RepositoryContext'
 import {
   garmentInputSchema,
@@ -11,6 +16,11 @@ import {
 } from '../src/db'
 import type { GarmentRepository } from '../src/db'
 import App from '../src/App'
+
+// jsdom no decodifica imágenes: simulamos el redimensionado.
+vi.mock('../src/lib/image', () => ({
+  resizeImage: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }),
+}))
 
 function createFakeRepo(): GarmentRepository & { items: Garment[] } {
   const items: Garment[] = []
@@ -50,17 +60,21 @@ function createFakeRepo(): GarmentRepository & { items: Garment[] } {
 
 let repo: ReturnType<typeof createFakeRepo>
 
-function renderApp(path: string) {
+function renderApp(path: string, ai?: AiProvider) {
+  const app = (
+    <RepositoryProvider repository={repo}>
+      <App />
+    </RepositoryProvider>
+  )
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <RepositoryProvider repository={repo}>
-        <App />
-      </RepositoryProvider>
+      {ai ? <AiProviderContextProvider provider={ai}>{app}</AiProviderContextProvider> : app}
     </MemoryRouter>,
   )
 }
 
 beforeEach(() => {
+  localStorage.clear()
   repo = createFakeRepo()
 })
 
@@ -127,5 +141,103 @@ describe('Agregar y Armario', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Eliminar' }))
     await screen.findByRole('heading', { level: 1, name: 'Armario' })
     expect(repo.items).toHaveLength(0)
+  })
+})
+
+describe('Agregar con IA', () => {
+  const photo = new File([new Uint8Array([1, 2, 3])], 'p.jpg', { type: 'image/jpeg' })
+
+  async function pickPhoto() {
+    await userEvent.upload(screen.getByTestId('gallery-input'), photo)
+    await screen.findByAltText('Vista previa de la foto')
+  }
+
+  it('rellena el formulario con la sugerencia y permite guardar', async () => {
+    const ai = new MockAiProvider({ delayMs: 20 })
+    renderApp('/agregar', ai)
+    await pickPhoto()
+    expect(await screen.findByText('Analizando la prenda…')).toBeInTheDocument()
+    expect(await screen.findByTestId('ai-suggested')).toHaveTextContent('Sugeridos por IA')
+    expect(screen.getByLabelText('Categoría *')).toHaveValue('top')
+    expect(screen.getByLabelText('Subcategoría')).toHaveValue('camisa')
+    expect(screen.getByLabelText('Formalidad *')).toHaveValue('4')
+    expect(screen.getByLabelText('Oficina')).toBeChecked()
+    expect(ai.tagCalls).toHaveLength(1)
+
+    await userEvent.clear(screen.getByLabelText('Subcategoría'))
+    await userEvent.type(screen.getByLabelText('Subcategoría'), 'Camisa Oxford')
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar prenda' }))
+    await screen.findByRole('heading', { level: 1, name: 'Armario' })
+    expect(repo.items[0]).toMatchObject({ subcategory: 'Camisa Oxford', formality: 4, photo_path: 'photo:1' })
+  })
+
+  it('"Volver a analizar" llama de nuevo a la IA', async () => {
+    const ai = new MockAiProvider()
+    renderApp('/agregar', ai)
+    await pickPhoto()
+    await screen.findByTestId('ai-suggested')
+    await userEvent.click(screen.getByRole('button', { name: 'Volver a analizar' }))
+    await waitFor(() => expect(ai.tagCalls).toHaveLength(2))
+  })
+
+  it('ante un error muestra el mensaje y deja usable el formulario manual con la foto', async () => {
+    const ai = new MockAiProvider({ error: new AiNetworkError() })
+    renderApp('/agregar', ai)
+    await pickPhoto()
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo conectar con la IA')
+    expect(screen.getByAltText('Vista previa de la foto')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Categoría *'), 'shoes')
+    await userEvent.selectOptions(screen.getByLabelText('Formalidad *'), '2')
+    await userEvent.selectOptions(screen.getByLabelText('Abrigo *'), '3')
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar prenda' }))
+    await screen.findByRole('heading', { level: 1, name: 'Armario' })
+    expect(repo.items[0]).toMatchObject({ category: 'shoes', photo_path: 'photo:1' })
+  })
+
+  it('sin API key muestra el aviso a Ajustes y no llama a la IA', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    renderApp('/agregar')
+    await pickPhoto()
+    expect(within(screen.getByText(/agrega tu API key/)).getByRole('link', { name: 'Ajustes' })).toHaveAttribute('href', '/ajustes')
+    expect(screen.getByText(/agrega tu API key/)).toBeInTheDocument()
+    expect(screen.queryByText('Analizando la prenda…')).not.toBeInTheDocument()
+    expect(fetchSpy).not.toHaveBeenCalled()
+    await userEvent.selectOptions(screen.getByLabelText('Categoría *'), 'top')
+    expect(screen.getByLabelText('Subcategoría')).toBeEnabled()
+    fetchSpy.mockRestore()
+  })
+})
+
+describe('Ajustes', () => {
+  it('guarda la key, alterna visibilidad y prueba la conexión', async () => {
+    const ai = new MockAiProvider({ json: { ok: true } })
+    renderApp('/ajustes', ai)
+    const key = screen.getByLabelText('API key de Gemini')
+    expect(key).toHaveAttribute('type', 'password')
+    await userEvent.click(screen.getByRole('button', { name: 'Mostrar' }))
+    expect(key).toHaveAttribute('type', 'text')
+    expect(screen.getByRole('link', { name: 'Google AI Studio' })).toHaveAttribute(
+      'href',
+      'https://aistudio.google.com/apikey',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Probar conexión' }))
+    expect(await screen.findByText('Conexión correcta.')).toBeInTheDocument()
+    expect(ai.jsonCalls).toHaveLength(1)
+  })
+
+  it('muestra error en español sin API key', async () => {
+    renderApp('/ajustes')
+    await userEvent.click(screen.getByRole('button', { name: 'Probar conexión' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Falta la API key')
+  })
+
+  it('persiste la ciudad', async () => {
+    renderApp('/ajustes')
+    const city = screen.getByLabelText(/Ciudad/)
+    expect(city).toHaveValue('Monterrey')
+    await userEvent.clear(city)
+    await userEvent.type(city, 'Apodaca')
+    expect(localStorage.getItem('armario.settings')).toContain('Apodaca')
+    saveSettings({ city: 'Monterrey' })
   })
 })

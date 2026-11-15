@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -15,6 +15,7 @@ import {
   type GarmentData,
   type Occasion,
 } from '../db'
+import type { TaggedGarment } from '../ai/provider'
 import { resizeImage } from '../lib/image'
 import { GarmentPhoto } from './GarmentPhoto'
 
@@ -30,9 +31,15 @@ interface Props {
   initial?: Garment
   submitLabel: string
   onSubmit: (value: GarmentFormSubmit) => Promise<void>
+  /** Se llama con la foto ya reducida (o null al quitarla). */
+  onPhotoChange?: (blob: Blob | null) => void
+  /** Valores sugeridos por la IA; cada cambio de `id` vuelve a rellenar el formulario. */
+  suggestion?: { id: number; values: TaggedGarment } | null
+  /** Contenido (estado de la IA) que se muestra bajo la foto. */
+  aiSlot?: ReactNode
 }
 
-export function GarmentForm({ initial, submitLabel, onSubmit }: Props) {
+export function GarmentForm({ initial, submitLabel, onSubmit, onPhotoChange, suggestion, aiSlot }: Props) {
   const [category, setCategory] = useState<string>(initial?.category ?? '')
   const [subcategory, setSubcategory] = useState(initial?.subcategory ?? '')
   const [colors, setColors] = useState(initial?.colors.join(', ') ?? '')
@@ -52,8 +59,28 @@ export function GarmentForm({ initial, submitLabel, onSubmit }: Props) {
   const [removePhoto, setRemovePhoto] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [aiFields, setAiFields] = useState(false)
+  const [appliedSuggestion, setAppliedSuggestion] = useState<number | null>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
+
+  // Rellena con la sugerencia de la IA al recibir una nueva (patrón "ajustar estado al renderizar").
+  if (suggestion && suggestion.id !== appliedSuggestion) {
+    const v = suggestion.values
+    setAppliedSuggestion(suggestion.id)
+    setAiFields(true)
+    setCategory(v.category)
+    setSubcategory(v.subcategory)
+    setColors(v.colors.join(', '))
+    setPattern(v.pattern)
+    setMaterial(v.material)
+    setFit(v.fit)
+    setFormality(String(v.formality))
+    setWarmth(String(v.warmth))
+    setOccasions(v.occasions)
+    setIsStatement(v.is_statement)
+    setNotes(v.notes)
+  }
 
   useEffect(() => {
     if (!photo) return
@@ -67,6 +94,7 @@ export function GarmentForm({ initial, submitLabel, onSubmit }: Props) {
       const blob = await resizeImage(file)
       setPhoto({ blob, url: URL.createObjectURL(blob) })
       setRemovePhoto(false)
+      onPhotoChange?.(blob)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo leer la imagen.')
     }
@@ -134,12 +162,19 @@ export function GarmentForm({ initial, submitLabel, onSubmit }: Props) {
             onClick={() => {
               setPhoto(null)
               setRemovePhoto(true)
+              onPhotoChange?.(null)
             }}
           >
             Quitar foto
           </button>
         )}
       </div>
+      {aiSlot}
+      {aiFields && (
+        <p className="ai-note" data-testid="ai-suggested">
+          ✨ Sugeridos por IA: revisa y corrige los campos antes de guardar.
+        </p>
+      )}
       <input
         ref={cameraRef}
         type="file"
